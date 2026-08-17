@@ -1,0 +1,19 @@
+{
+  "expo": {
+    "name": "Kaam",
+    "slug": "gig-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "backgroundColor": "#F1ECE0"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "android": {
+      "package": "com.gigapp.kaam",
+      "adaptiveIcon": {
+        "backgroundColor": "#F1ECE0"
+      }
+    }
+  }
+}
