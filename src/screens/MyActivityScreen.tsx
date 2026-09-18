@@ -6,10 +6,16 @@ import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
 import { currentWorker } from '@/data/mockData';
 import { JobStatus } from '@/types/models';
+import { CompositeScreenProps } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
+import type { TabParamList } from '@/navigation/TabNavigator';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Tabs'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<TabParamList, 'MyActivity'>,
+  NativeStackScreenProps<RootStackParamList, 'Tabs'>
+>;
 
 const statusTone: Record<JobStatus, { bg: string; fg: string; label: string }> = {
   open: { bg: colors.canvasAlt, fg: colors.inkSoft, label: 'Open' },

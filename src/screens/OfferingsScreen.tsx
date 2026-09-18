@@ -5,8 +5,12 @@ import { colors, spacing, type } from '@/theme/tokens';
 import { OfferingCard } from '@/components/WorkerCards';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '@/navigation/RootNavigator';
 
-export function OfferingsScreen() {
+type Props = NativeStackScreenProps<RootStackParamList, 'Tabs'>;
+
+export function OfferingsScreen({ navigation }: Props) {
   const { offerings } = useStore();
   const { mode } = useAppMode();
   const visible = offerings.filter((o) => o.status === 'active' && o.moderationStatus !== 'rejected');
@@ -27,7 +31,7 @@ export function OfferingsScreen() {
         keyExtractor={(o) => o.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl, paddingTop: spacing.sm }}
         renderItem={({ item }) => (
-          <OfferingCard offering={item} onPress={() => {}} />
+          <OfferingCard offering={item} onPress={() => navigation.navigate('OfferingDetail', { offeringId: item.id })} />
         )}
       />
     </SafeAreaView>

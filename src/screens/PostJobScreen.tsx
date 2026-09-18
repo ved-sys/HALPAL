@@ -4,54 +4,56 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, type } from '@/theme/tokens';
 import { PrimaryButton } from '@/components/atoms';
 import { useStore } from '@/state/store';
-import { JobCategory, VerificationTier } from '@/types/models';
+import { categoryDescription, categoryColor, JobCategory } from '@/types/models';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'PostJob'>;
 
-const categories: JobCategory[] = ['Care', 'Tutoring/Skills', 'Manual Help', 'Errands', 'Events', 'Tech Help'];
-const tiers: { value: VerificationTier; label: string }[] = [
-  { value: 'level_1', label: 'ID only' },
-  { value: 'level_2', label: 'ID + Face match' },
-  { value: 'level_3', label: 'Background checked' },
+const allCategories: JobCategory[] = [
+  'Delivery & Pickup',
+  'Loading & Moving Help',
+  'Errands & Queueing',
+  'Cleaning & Household Help',
+  'Event & Setup Help',
+  'General Labor',
+  'Other',
 ];
-
-// Very rough rule-based category guess from free text, standing in for the
-// NLP tagging described in the PRD (section 12 says rule-based is fine to
-// start with).
-function guessCategory(text: string): JobCategory {
-  const t = text.toLowerCase();
-  if (/(elder|grandmother|grandfather|child|kid|baby|care)/.test(t)) return 'Care';
-  if (/(teach|tutor|learn|lesson|chess|language)/.test(t)) return 'Tutoring/Skills';
-  if (/(move|carry|lift|furniture|clean)/.test(t)) return 'Manual Help';
-  if (/(wifi|laptop|computer|setup|printer|tech)/.test(t)) return 'Tech Help';
-  if (/(event|party|decorate)/.test(t)) return 'Events';
-  return 'Errands';
-}
 
 export function PostJobScreen({ navigation }: Props) {
   const { addJob } = useStore();
+  const [selectedCategories, setSelectedCategories] = useState<JobCategory[]>([]);
   const [description, setDescription] = useState('');
   const [budgetMin, setBudgetMin] = useState('');
   const [budgetMax, setBudgetMax] = useState('');
   const [location, setLocation] = useState('');
   const [urgency, setUrgency] = useState<'asap' | 'scheduled'>('scheduled');
-  const [tier, setTier] = useState<VerificationTier>('level_1');
+  const [scheduledDatetime, setScheduledDatetime] = useState('');
 
-  const canSubmit = description.trim().length > 10 && budgetMin && budgetMax && location.trim().length > 0;
+  const hasCategory = selectedCategories.length > 0;
+  const includesOther = selectedCategories.includes('Other');
+  const budgetsValid =
+    budgetMin.length > 0 && budgetMax.length > 0 && Number(budgetMin) < Number(budgetMax);
+
+  const canSubmit =
+    hasCategory && description.trim().length > 10 && budgetsValid && location.trim().length > 0;
+
+  function toggleCategory(category: JobCategory) {
+    setSelectedCategories((prev) =>
+      prev.includes(category) ? prev.filter((c) => c !== category) : [...prev, category]
+    );
+  }
 
   function submit() {
-    const category = guessCategory(description);
     addJob({
       id: `job_${Date.now()}`,
       description: description.trim(),
-      categoryTags: [category],
+      categoryTags: selectedCategories,
       budgetMin: Number(budgetMin),
       budgetMax: Number(budgetMax),
       urgency,
+      scheduledDatetime: urgency === 'scheduled' ? scheduledDatetime.trim() || undefined : undefined,
       locationLabel: location.trim(),
-      minVerificationTierRequired: tier,
       status: 'open',
       origin: 'customer_posted',
       createdAt: new Date().toISOString(),
@@ -65,81 +67,113 @@ export function PostJobScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}>
         <Text style={[type.display, { color: colors.ink }]}>Post a job</Text>
         <Text style={[type.body, { color: colors.inkSoft, marginTop: spacing.xs }]}>
-          Describe it in your own words — no need to pick a category.
+          What kind of help do you need? Pick everything that applies.
         </Text>
 
-        <Field label="What do you need help with?">
-          <TextInput
-            value={description}
-            onChangeText={setDescription}
-            placeholder="e.g. Need someone to sit with my grandmother this afternoon while I'm at a hospital appointment."
-            placeholderTextColor={colors.inkFaint}
-            multiline
-            style={[styles.input, { height: 110, textAlignVertical: 'top' }]}
-          />
-        </Field>
-
-        <View style={styles.row}>
-          <Field label="Budget min (₹)" style={{ flex: 1 }}>
-            <TextInput value={budgetMin} onChangeText={setBudgetMin} keyboardType="numeric" style={styles.input} />
-          </Field>
-          <Field label="Budget max (₹)" style={{ flex: 1 }}>
-            <TextInput value={budgetMax} onChangeText={setBudgetMax} keyboardType="numeric" style={styles.input} />
-          </Field>
+        <View style={{ marginTop: spacing.lg, gap: spacing.sm }}>
+          {allCategories.map((category) => {
+            const selected = selectedCategories.includes(category);
+            return (
+              <Pressable
+                key={category}
+                onPress={() => toggleCategory(category)}
+                style={[
+                  styles.categoryRow,
+                  selected && { borderColor: categoryColor[category], backgroundColor: categoryColor[category] + '14' },
+                ]}
+              >
+                <View style={[styles.checkbox, selected && { backgroundColor: categoryColor[category], borderColor: categoryColor[category] }]}>
+                  {selected && <Text style={styles.checkmark}>✓</Text>}
+                </View>
+                <View style={{ flex: 1 }}>
+                  <Text style={[type.bodyStrong, { color: colors.ink }]}>{category}</Text>
+                  <Text style={[type.small, { color: colors.inkFaint, marginTop: 2 }]}>
+                    {categoryDescription[category]}
+                  </Text>
+                </View>
+              </Pressable>
+            );
+          })}
         </View>
 
-        <Field label="Location">
-          <TextInput
-            value={location}
-            onChangeText={setLocation}
-            placeholder="e.g. Adyar, Chennai"
-            placeholderTextColor={colors.inkFaint}
-            style={styles.input}
-          />
-        </Field>
-
-        <Field label="Urgency">
-          <View style={styles.pillRow}>
-            {(['asap', 'scheduled'] as const).map((u) => (
-              <Pressable
-                key={u}
-                onPress={() => setUrgency(u)}
-                style={[styles.pill, urgency === u && styles.pillActive]}
-              >
-                <Text style={[type.smallStrong, { color: urgency === u ? colors.onPrimary : colors.inkSoft }]}>
-                  {u === 'asap' ? 'ASAP' : 'Scheduled'}
-                </Text>
-              </Pressable>
-            ))}
+        {includesOther && (
+          <View style={styles.reviewNotice}>
+            <Text style={[type.small, { color: colors.inkSoft }]}>
+              Jobs tagged "Other" are held for review before they go live on the feed.
+            </Text>
           </View>
-        </Field>
+        )}
 
-        <Field label="Minimum verification required">
-          <View style={styles.pillRow}>
-            {tiers.map((t) => (
-              <Pressable
-                key={t.value}
-                onPress={() => setTier(t.value)}
-                style={[styles.pill, tier === t.value && styles.pillActiveTeal]}
-              >
-                <Text style={[type.small, { color: tier === t.value ? colors.white : colors.inkSoft }]}>
-                  {t.label}
-                </Text>
-              </Pressable>
-            ))}
-          </View>
-          <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.xs }]}>
-            Higher tiers narrow your worker pool but raise trust — use Background Checked for jobs involving
-            children, elders, or home access while you're away.
-          </Text>
-        </Field>
+        {hasCategory && (
+          <>
+            <Field label="What do you need help with?">
+              <TextInput
+                value={description}
+                onChangeText={setDescription}
+                placeholder="e.g. Need groceries picked up from the supermarket and dropped at my apartment."
+                placeholderTextColor={colors.inkFaint}
+                multiline
+                style={[styles.input, { height: 110, textAlignVertical: 'top' }]}
+              />
+            </Field>
 
-        <PrimaryButton
-          label="Post job"
-          onPress={submit}
-          disabled={!canSubmit}
-          style={{ marginTop: spacing.xl }}
-        />
+            <View style={styles.row}>
+              <Field label="Budget min (₹)" style={{ flex: 1 }}>
+                <TextInput value={budgetMin} onChangeText={setBudgetMin} keyboardType="numeric" style={styles.input} />
+              </Field>
+              <Field label="Budget max (₹)" style={{ flex: 1 }}>
+                <TextInput value={budgetMax} onChangeText={setBudgetMax} keyboardType="numeric" style={styles.input} />
+              </Field>
+            </View>
+            {budgetMin.length > 0 && budgetMax.length > 0 && !budgetsValid && (
+              <Text style={[type.small, { color: colors.danger, marginTop: spacing.xs }]}>
+                Maximum budget must be greater than minimum budget.
+              </Text>
+            )}
+
+            <Field label="Location">
+              <TextInput
+                value={location}
+                onChangeText={setLocation}
+                placeholder="e.g. Adyar, Chennai"
+                placeholderTextColor={colors.inkFaint}
+                style={styles.input}
+              />
+            </Field>
+
+            <Field label="When do you need this done?">
+              <View style={styles.pillRow}>
+                {(['asap', 'scheduled'] as const).map((u) => (
+                  <Pressable
+                    key={u}
+                    onPress={() => setUrgency(u)}
+                    style={[styles.pill, urgency === u && styles.pillActive]}
+                  >
+                    <Text style={[type.smallStrong, { color: urgency === u ? colors.onPrimary : colors.inkSoft }]}>
+                      {u === 'asap' ? 'ASAP' : 'Scheduled'}
+                    </Text>
+                  </Pressable>
+                ))}
+              </View>
+              {urgency === 'scheduled' && (
+                <TextInput
+                  value={scheduledDatetime}
+                  onChangeText={setScheduledDatetime}
+                  placeholder="e.g. 18 Aug, 5:00 PM"
+                  placeholderTextColor={colors.inkFaint}
+                  style={[styles.input, { marginTop: spacing.sm }]}
+                />
+              )}
+            </Field>
+
+            <PrimaryButton
+              label="Post job"
+              onPress={submit}
+              disabled={!canSubmit}
+              style={{ marginTop: spacing.xl }}
+            />
+          </>
+        )}
       </ScrollView>
     </SafeAreaView>
   );
@@ -165,6 +199,33 @@ function Field({
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
   row: { flexDirection: 'row', gap: spacing.md },
+  categoryRow: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: spacing.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
+  checkbox: {
+    width: 22,
+    height: 22,
+    borderRadius: radius.sm,
+    borderWidth: 1.5,
+    borderColor: colors.borderStrong,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginTop: 2,
+  },
+  checkmark: { color: colors.white, fontSize: 13, fontWeight: '700' },
+  reviewNotice: {
+    marginTop: spacing.sm,
+    backgroundColor: colors.canvasAlt,
+    borderRadius: radius.md,
+    padding: spacing.md,
+  },
   input: {
     borderWidth: 1,
     borderColor: colors.borderStrong,
@@ -184,5 +245,4 @@ const styles = StyleSheet.create({
     backgroundColor: colors.canvasAlt,
   },
   pillActive: { backgroundColor: colors.primary },
-  pillActiveTeal: { backgroundColor: colors.teal },
 });

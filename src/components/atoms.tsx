@@ -1,7 +1,6 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors, fonts, radius, spacing, themeMeta, type } from '@/theme/tokens';
-import { VerificationTier, verificationTierLabel } from '@/types/models';
 
 export function Badge({
   label,
@@ -25,25 +24,11 @@ export function Badge({
   );
 }
 
-export function VerificationStamp({ tier }: { tier: VerificationTier }) {
-  if (tier === 'none') return <Badge label="Unverified" tone="neutral" />;
-  const dots = tier === 'level_1' ? 1 : tier === 'level_2' ? 2 : 3;
+export function VerificationStamp({ isVerified }: { isVerified: boolean }) {
+  if (!isVerified) return <Badge label="Unverified" tone="neutral" />;
   return (
     <View style={styles.stampRow}>
-      <View style={styles.stampDots}>
-        {[1, 2, 3].map((i) => (
-          <View
-            key={i}
-            style={[
-              styles.stampDot,
-              { backgroundColor: i <= dots ? colors.teal : colors.border },
-            ]}
-          />
-        ))}
-      </View>
-      <Text style={[type.smallStrong, { color: colors.teal }]}>
-        {verificationTierLabel[tier]}
-      </Text>
+      <Text style={[type.smallStrong, { color: colors.success }]}>✓ Verified</Text>
     </View>
   );
 }
@@ -195,8 +180,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-start',
   },
   stampRow: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  stampDots: { flexDirection: 'row', gap: 3 },
-  stampDot: { width: 6, height: 6, borderRadius: 3 },
   button: {
     paddingVertical: spacing.md,
     paddingHorizontal: spacing.lg,

@@ -1,19 +1,42 @@
-import React from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { JobCard } from '@/components/JobCard';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
+import { JobCategory } from '@/types/models';
+import { CompositeScreenProps } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
+import type { TabParamList } from '@/navigation/TabNavigator';
 
-type Props = NativeStackScreenProps<RootStackParamList, 'Tabs'>;
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<TabParamList, 'Feed'>,
+  NativeStackScreenProps<RootStackParamList, 'Tabs'>
+>;
+
+const allCategories: JobCategory[] = [
+  'Delivery & Pickup',
+  'Loading & Moving Help',
+  'Errands & Queueing',
+  'Cleaning & Household Help',
+  'Event & Setup Help',
+  'General Labor',
+  'Other',
+];
 
 export function FeedScreen({ navigation }: Props) {
   const { jobs } = useStore();
   const { mode } = useAppMode();
-  const openJobs = jobs.filter((j) => j.status === 'open' || j.status === 'applications_received');
+  const [activeCategory, setActiveCategory] = useState<JobCategory | 'All'>('All');
+  const openJobs = jobs.filter(
+    (j) =>
+      (j.status === 'open' || j.status === 'applications_received') &&
+      j.moderationStatus !== 'pending_review' &&
+      (activeCategory === 'All' || j.categoryTags.includes(activeCategory))
+  );
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -30,9 +53,29 @@ export function FeedScreen({ navigation }: Props) {
       </View>
       <Text style={[type.body, { color: colors.inkSoft, marginHorizontal: spacing.lg, marginBottom: spacing.sm }]}>
         {mode === 'worker'
-          ? 'Odd jobs near you, described in the customer\u2019s own words.'
-          : 'What people nearby have posted right now.'}
+          ? 'Simple jobs near you, paid better \u2014 we take less so you keep more.'
+          : 'Post simple, everyday jobs \u2014 help is nearby.'}
       </Text>
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+      >
+        {(['All', ...allCategories] as const).map((category) => {
+          const active = activeCategory === category;
+          return (
+            <Pressable
+              key={category}
+              onPress={() => setActiveCategory(category)}
+              style={[styles.chip, active && styles.chipActive]}
+            >
+              <Text style={[type.smallStrong, { color: active ? colors.onPrimary : colors.inkSoft }]}>
+                {category}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
       <FlatList
         data={openJobs}
         keyExtractor={(j) => j.id}
@@ -69,4 +112,12 @@ const styles = StyleSheet.create({
     ...shadow.card,
   },
   empty: { padding: spacing.xxl, alignItems: 'center' },
+  chipRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm },
+  chip: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.pill,
+    backgroundColor: colors.canvasAlt,
+  },
+  chipActive: { backgroundColor: colors.primary },
 });

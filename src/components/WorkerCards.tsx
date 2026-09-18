@@ -46,7 +46,7 @@ export function ApplicantRow({
         <Text style={[type.mono, { color: colors.primaryDark }]}>₹{application.quotedRate}</Text>
       </View>
 
-      <VerificationStamp tier={worker.verificationTier} />
+      <VerificationStamp isVerified={worker.isVerified} />
 
       {application.note && (
         <Text style={[type.small, { color: colors.inkSoft, marginTop: spacing.sm }]}>
@@ -99,7 +99,7 @@ export function OfferingCard({ offering, onPress }: { offering: WorkerOffering; 
         </Text>
         <View style={styles.offeringFooter}>
           <Text style={[type.mono, { color: colors.primaryDark }]}>₹{offering.rate}/session</Text>
-          <VerificationStamp tier={offering.worker.verificationTier} />
+          <VerificationStamp isVerified={offering.worker.isVerified} />
         </View>
       </View>
     </Pressable>

@@ -1,7 +1,7 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
-import { categoryColor, Job, verificationTierLabel } from '@/types/models';
+import { categoryColor, Job } from '@/types/models';
 
 // Signature element: job posts read like index cards pinned to a board —
 // a nod to how these jobs actually get arranged today (word of mouth,
@@ -50,9 +50,6 @@ export function JobCard({ job, onPress, rotate = true }: { job: Job; onPress: ()
         <View style={styles.footerRow}>
           <Text style={[type.mono, { color: colors.primaryDark }]}>
             ₹{job.budgetMin}–₹{job.budgetMax}
-          </Text>
-          <Text style={[type.small, { color: colors.teal }]}>
-            {verificationTierLabel[job.minVerificationTierRequired]}+
           </Text>
         </View>
 

@@ -6,13 +6,11 @@ import { Avatar } from '@/components/WorkerCards';
 import { RatingLine } from '@/components/atoms';
 import { currentWorker } from '@/data/mockData';
 import { useAppMode } from '@/state/AppMode';
-import { VerificationTier, verificationTierLabel } from '@/types/models';
-
-const allTiers: VerificationTier[] = ['level_1', 'level_2', 'level_3'];
-const tierOrder: Record<VerificationTier, number> = { none: 0, level_1: 1, level_2: 2, level_3: 3 };
+import { useStore } from '@/state/store';
 
 export function ProfileScreen() {
   const { mode, setMode } = useAppMode();
+  const { currentWorkerVerified, verifyCurrentWorker } = useStore();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -38,29 +36,26 @@ export function ProfileScreen() {
 
         <View style={styles.section}>
           <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>VERIFICATION</Text>
-          {allTiers.map((tier) => {
-            const reached = tierOrder[currentWorker.verificationTier] >= tierOrder[tier];
-            return (
-              <View key={tier} style={[styles.tierRow, shadow.card]}>
-                <View style={[styles.tierDot, { backgroundColor: reached ? colors.teal : colors.border }]} />
-                <View style={{ flex: 1 }}>
-                  <Text style={[type.bodyStrong, { color: colors.ink }]}>{verificationTierLabel[tier]}</Text>
-                  <Text style={[type.small, { color: colors.inkFaint }]}>
-                    {tier === 'level_1' && 'Government ID upload'}
-                    {tier === 'level_2' && 'ID + live face-match'}
-                    {tier === 'level_3' && 'Third-party background check'}
-                  </Text>
-                </View>
-                {reached ? (
-                  <Text style={[type.smallStrong, { color: colors.teal }]}>Done</Text>
-                ) : (
-                  <Pressable style={styles.verifyBtn}>
-                    <Text style={[type.smallStrong, { color: colors.primaryDark }]}>Start</Text>
-                  </Pressable>
-                )}
-              </View>
-            );
-          })}
+          <View style={[styles.tierRow, shadow.card]}>
+            <View style={[styles.tierDot, { backgroundColor: currentWorkerVerified ? colors.success : colors.border }]} />
+            <View style={{ flex: 1 }}>
+              <Text style={[type.bodyStrong, { color: colors.ink }]}>
+                {currentWorkerVerified ? 'Verified' : 'Not verified'}
+              </Text>
+              <Text style={[type.small, { color: colors.inkFaint }]}>
+                {currentWorkerVerified
+                  ? 'Your ID has been verified.'
+                  : 'Verify your ID to apply for jobs and post offerings.'}
+              </Text>
+            </View>
+            {currentWorkerVerified ? (
+              <Text style={[type.smallStrong, { color: colors.success }]}>✓ Done</Text>
+            ) : (
+              <Pressable style={styles.verifyBtn} onPress={verifyCurrentWorker}>
+                <Text style={[type.smallStrong, { color: colors.primaryDark }]}>Verify your ID</Text>
+              </Pressable>
+            )}
+          </View>
         </View>
 
         <View style={styles.section}>

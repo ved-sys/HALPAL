@@ -34,9 +34,9 @@ export function LoginScreen({ navigation }: Props) {
           showsVerticalScrollIndicator={false}
         >
           <Text style={[type.label, { color: colors.primaryDark }]}>KAAM</Text>
-          <Text style={styles.headline}>Odd jobs,{'\n'}done kindly.</Text>
+          <Text style={styles.headline}>Simple work,{'\n'}better pay.</Text>
           <Text style={styles.subtitle}>
-            Sign in to post a small job or offer a skill to your neighbourhood.
+            Sign in to post a quick job, or pick up simple work nearby — better pay than delivery apps.
           </Text>
 
           <View style={{ marginTop: spacing.xl, gap: spacing.md }}>
@@ -70,7 +70,7 @@ export function LoginScreen({ navigation }: Props) {
             <View style={styles.roleRow}>
               <RoleCard
                 label="Worker"
-                sub="Offer skills, apply to jobs"
+                sub="Pick up jobs, keep more pay"
                 active={mode === 'worker'}
                 onPress={() => setMode('worker')}
               />

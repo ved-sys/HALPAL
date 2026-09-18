@@ -2,15 +2,14 @@
 // UI needs. Field names match the schema doc so wiring a real API later
 // is a rename, not a redesign.
 
-export type VerificationTier = 'none' | 'level_1' | 'level_2' | 'level_3';
-
 export type JobCategory =
-  | 'Care'
-  | 'Tutoring/Skills'
-  | 'Manual Help'
-  | 'Errands'
-  | 'Events'
-  | 'Tech Help';
+  | 'Delivery & Pickup'
+  | 'Loading & Moving Help'
+  | 'Errands & Queueing'
+  | 'Cleaning & Household Help'
+  | 'Event & Setup Help'
+  | 'General Labor'
+  | 'Other';
 
 export type JobStatus =
   | 'open'
@@ -28,7 +27,7 @@ export interface WorkerSummary {
   id: string;
   fullName: string;
   avatarColor: string; // placeholder instead of a photo asset
-  verificationTier: VerificationTier;
+  isVerified: boolean;
   avgRating: number;
   totalJobsCompleted: number;
   skills: string[];
@@ -44,8 +43,8 @@ export interface Job {
   urgency: 'asap' | 'scheduled';
   scheduledDatetime?: string;
   locationLabel: string;
-  minVerificationTierRequired: VerificationTier;
   status: JobStatus;
+  moderationStatus: 'not_required' | 'pending_review' | 'approved' | 'rejected';
   origin: 'customer_posted' | 'worker_offered';
   createdAt: string;
   applicantCount: number;
@@ -61,6 +60,37 @@ export interface JobApplication {
   appliedAt: string;
 }
 
+export interface Chat {
+  id: string;
+  // A chat starts from exactly one of these: a job (customer accepted a
+  // worker's application) or a booking request (customer requested an
+  // offering). When a booking is confirmed, jobId is backfilled onto the
+  // same chat so it carries on as an ordinary job chat.
+  jobId?: string;
+  bookingRequestId?: string;
+  customerId: string;
+  workerId: string;
+  createdAt: string;
+  lastMessageAt: string;
+}
+
+export interface Message {
+  id: string;
+  chatId: string;
+  senderId: string;
+  text: string;
+  sentAt: string;
+  read: boolean;
+}
+
+export interface BookingRequest {
+  id: string;
+  offeringId: string;
+  customerId: string;
+  status: 'pending' | 'confirmed' | 'declined' | 'cancelled';
+  createdAt: string;
+}
+
 export interface WorkerOffering {
   id: string;
   worker: WorkerSummary;
@@ -69,22 +99,35 @@ export interface WorkerOffering {
   categoryTags: JobCategory[];
   pricingType: 'platform_suggested' | 'custom';
   rate: number;
+  // 'pending_review'/'rejected' are declared for the future review flow on
+  // custom-priced offerings but have no code path setting them yet — every
+  // offering today defaults to 'not_required' or 'approved'. Known gap, not
+  // forgotten.
   moderationStatus: 'not_required' | 'pending_review' | 'approved' | 'rejected';
   status: 'active' | 'inactive';
 }
 
-export const verificationTierLabel: Record<VerificationTier, string> = {
-  none: 'Unverified',
-  level_1: 'ID Verified',
-  level_2: 'Face Matched',
-  level_3: 'Background Checked',
+export const categoryDescription: Record<JobCategory, string> = {
+  'Delivery & Pickup': 'Groceries, parcels, food, documents, medicine — pickup, drop-off, or courier runs.',
+  'Loading & Moving Help': 'Lifting and carrying. Moving house, loading/unloading vehicles, shop stocking, hauling furniture, clearing junk.',
+  'Errands & Queueing': 'Running a task or standing in for someone. Waiting in line, small purchases, holding a spot.',
+  'Cleaning & Household Help': 'Tidying and upkeep, indoors or out. Sweeping, mopping, dishes, laundry, yard work, washing a car or bike.',
+  'Event & Setup Help': 'Extra hands for an occasion. Setting up or breaking down chairs, tents, decorations; festival prep; guiding guests; running a stall.',
+  'General Labor': "Simple physical work that doesn't fit the rest — packing, sorting, basic assembly, an extra pair of hands.",
+  'Other': "Doesn't fit any category above. Describe the job and it'll be reviewed before going live.",
 };
 
+// Hex values below are copied from theme/tokens.ts (colors.primary,
+// primaryDark, teal, success, ink, inkSoft, muted) rather than imported —
+// this file mirrors a backend schema doc and shouldn't depend on the UI
+// theme layer. colors.danger is deliberately not reused here; tokens.ts
+// reserves it for SOS/urgent and dispute states.
 export const categoryColor: Record<JobCategory, string> = {
-  Care: '#C1432A',
-  'Tutoring/Skills': '#0E5C56',
-  'Manual Help': '#A56C03',
-  Errands: '#7A6A9C',
-  Events: '#B0518C',
-  'Tech Help': '#2E6DA4',
+  'Delivery & Pickup': '#EC5B38',
+  'Loading & Moving Help': '#B23F1F',
+  'Errands & Queueing': '#0E5C56',
+  'Cleaning & Household Help': '#7a8a5e',
+  'Event & Setup Help': '#7a6a67',
+  'General Labor': '#524646',
+  'Other': '#A8A492',
 };
