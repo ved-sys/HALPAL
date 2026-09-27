@@ -6,21 +6,81 @@ import { Blob, PrimaryButton } from '@/components/atoms';
 import { useAppMode } from '@/state/AppMode';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
+import { supabase } from '@/lib/supabase';
+import { currentCustomer, currentWorker } from '@/data/mockData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
-// Matches kaam-design-reference.jsx's LoginScreen (editorial theme): two
-// background blobs, italic-Fraunces headline, pill phone/password fields,
-// a role picker that doubles as the app's existing worker/customer mode
-// switch, and a pill CTA. No real auth backend — Continue just enters the
-// app; the role picked here is the same AppMode used throughout.
-export function LoginScreen({ navigation }: Props) {
-  const { mode, setMode } = useAppMode();
-  const [phone, setPhone] = useState('');
-  const [password, setPassword] = useState('');
+type Step = 'phone' | 'code';
 
-  function handleContinue() {
+// Matches kaam-design-reference.jsx's LoginScreen (editorial theme): two
+// background blobs, italic-Fraunces headline, pill phone field, pill CTA.
+// Real Supabase phone-OTP auth — signInWithOtp sends the SMS code,
+// verifyOtp confirms it and starts the session. AppMode defaults to
+// 'customer' on first login; ProfileScreen's existing toggle still
+// handles switching to worker mode afterward.
+export function LoginScreen({ navigation }: Props) {
+  const { setMode } = useAppMode();
+  const [step, setStep] = useState<Step>('phone');
+  const [phone, setPhone] = useState('');
+  const [code, setCode] = useState('');
+  const [sending, setSending] = useState(false);
+  const [verifying, setVerifying] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const digits = phone.replace(/\D/g, '');
+  // Supabase's configured test numbers use E.164-without-plus (e.g.
+  // 919999999999), so prepend '91' rather than '+91'.
+  const e164Phone = `91${digits}`;
+
+  async function handleSendCode() {
+    setError(null);
+    if (digits.length !== 10) {
+      setError('Enter a valid 10-digit phone number.');
+      return;
+    }
+    setSending(true);
+    const { error: otpError } = await supabase.auth.signInWithOtp({ phone: e164Phone });
+    setSending(false);
+    if (otpError) {
+      setError(otpError.message);
+      return;
+    }
+    setStep('code');
+  }
+
+  async function handleVerify() {
+    setError(null);
+    const token = code.trim();
+    if (token.length !== 6) {
+      setError('Enter the 6-digit code.');
+      return;
+    }
+    setVerifying(true);
+    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+      phone: e164Phone,
+      token,
+      type: 'sms',
+    });
+    setVerifying(false);
+    if (verifyError) {
+      setError(verifyError.message);
+      return;
+    }
+
+    const userId = data.session?.user.id ?? data.user?.id;
+    if (userId) {
+      currentCustomer.id = userId;
+      currentWorker.id = userId;
+    }
+    setMode('customer');
     navigation.replace('Tabs');
+  }
+
+  function handleUseDifferentNumber() {
+    setStep('phone');
+    setCode('');
+    setError(null);
   }
 
   return (
@@ -45,50 +105,52 @@ export function LoginScreen({ navigation }: Props) {
               <View style={styles.divider} />
               <TextInput
                 value={phone}
-                onChangeText={setPhone}
+                onChangeText={(v) => setPhone(v.replace(/\D/g, '').slice(0, 10))}
                 placeholder="98404 22188"
                 placeholderTextColor={colors.inkFaint}
                 keyboardType="phone-pad"
+                editable={step === 'phone'}
                 style={styles.pillInput}
               />
             </FieldPill>
 
-            <FieldPill label="Password">
-              <TextInput
-                value={password}
-                onChangeText={setPassword}
-                placeholder="••••••••"
-                placeholderTextColor={colors.inkFaint}
-                secureTextEntry
-                style={[styles.pillInput, password ? { letterSpacing: 3 } : null]}
-              />
-            </FieldPill>
+            {step === 'code' && (
+              <FieldPill label="Verification code">
+                <TextInput
+                  value={code}
+                  onChangeText={(v) => setCode(v.replace(/\D/g, '').slice(0, 6))}
+                  placeholder="123456"
+                  placeholderTextColor={colors.inkFaint}
+                  keyboardType="number-pad"
+                  autoFocus
+                  style={[styles.pillInput, { letterSpacing: 3 }]}
+                />
+              </FieldPill>
+            )}
           </View>
 
-          <View style={{ marginTop: spacing.lg }}>
-            <Text style={styles.sectionLabel}>I'm joining as</Text>
-            <View style={styles.roleRow}>
-              <RoleCard
-                label="Worker"
-                sub="Pick up jobs, keep more pay"
-                active={mode === 'worker'}
-                onPress={() => setMode('worker')}
-              />
-              <RoleCard
-                label="Customer"
-                sub="Post a job to get help"
-                active={mode === 'customer'}
-                onPress={() => setMode('customer')}
-              />
-            </View>
-          </View>
+          {error ? <Text style={styles.errorText}>{error}</Text> : null}
 
-          <PrimaryButton label="Continue" onPress={handleContinue} style={styles.continueBtn} />
-
-          <View style={styles.footerRow}>
-            <Text style={styles.footerText}>New here? </Text>
-            <Text style={styles.footerLink}>Create an account</Text>
-          </View>
+          {step === 'phone' ? (
+            <PrimaryButton
+              label={sending ? 'Sending code…' : 'Send code'}
+              onPress={handleSendCode}
+              disabled={sending}
+              style={styles.continueBtn}
+            />
+          ) : (
+            <>
+              <PrimaryButton
+                label={verifying ? 'Verifying…' : 'Verify'}
+                onPress={handleVerify}
+                disabled={verifying}
+                style={styles.continueBtn}
+              />
+              <Pressable onPress={handleUseDifferentNumber} style={styles.footerRow}>
+                <Text style={styles.footerLink}>Use a different number</Text>
+              </Pressable>
+            </>
+          )}
         </ScrollView>
       </SafeAreaView>
     </View>
@@ -101,33 +163,6 @@ function FieldPill({ label, children }: { label: string; children: React.ReactNo
       <Text style={styles.fieldLabel}>{label}</Text>
       <View style={styles.pillField}>{children}</View>
     </View>
-  );
-}
-
-function RoleCard({
-  label,
-  sub,
-  active,
-  onPress,
-}: {
-  label: string;
-  sub: string;
-  active: boolean;
-  onPress: () => void;
-}) {
-  return (
-    <Pressable
-      onPress={onPress}
-      style={[styles.roleCard, active ? styles.roleCardActive : styles.roleCardInactive]}
-    >
-      {active && (
-        <Blob size={60} color={colors.primary} opacity={0.9} style={{ top: -20, right: -20 }} />
-      )}
-      <Text style={[styles.roleLabel, { color: active ? colors.canvas : colors.ink }]}>{label}</Text>
-      <Text style={[styles.roleSub, { color: active ? colors.canvas : colors.inkSoft, opacity: active ? 0.75 : 1 }]}>
-        {sub}
-      </Text>
-    </Pressable>
   );
 }
 
@@ -181,37 +216,11 @@ const styles = StyleSheet.create({
     color: colors.ink,
     padding: 0,
   },
-  sectionLabel: {
-    fontFamily: fonts.bodyBold,
-    fontSize: 11,
-    fontWeight: '700',
-    letterSpacing: 0.8,
-    color: colors.inkSoft,
-    textTransform: 'uppercase',
-    marginBottom: spacing.sm,
-  },
-  roleRow: { flexDirection: 'row', gap: spacing.sm },
-  roleCard: {
-    flex: 1,
-    padding: spacing.md,
-    paddingBottom: spacing.lg,
-    borderRadius: radius.big,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  roleCardActive: { backgroundColor: colors.ink },
-  roleCardInactive: { backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border },
-  roleLabel: {
-    fontFamily: fonts.display,
-    fontStyle: 'italic',
-    fontWeight: '400',
-    fontSize: 22,
-    letterSpacing: -0.4,
-  },
-  roleSub: {
+  errorText: {
     fontFamily: fonts.body,
-    fontSize: 11,
-    marginTop: spacing.xs,
+    fontSize: 13,
+    color: colors.danger,
+    marginTop: spacing.md,
   },
   continueBtn: {
     marginTop: spacing.xl,
@@ -222,6 +231,5 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     marginTop: spacing.lg,
   },
-  footerText: { fontFamily: fonts.body, fontSize: 13, color: colors.inkSoft },
   footerLink: { fontFamily: fonts.bodyBold, fontSize: 13, fontWeight: '700', color: colors.primaryDark },
 });
