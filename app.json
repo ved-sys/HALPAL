@@ -1,7 +1,7 @@
 {
   "expo": {
-    "name": "Kaam",
-    "slug": "gig-app",
+    "name": "Halpal",
+    "slug": "halpal",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -10,7 +10,7 @@
     },
     "assetBundlePatterns": ["**/*"],
     "android": {
-      "package": "com.gigapp.kaam",
+      "package": "com.halpal.app",
       "adaptiveIcon": {
         "backgroundColor": "#F1ECE0"
       }

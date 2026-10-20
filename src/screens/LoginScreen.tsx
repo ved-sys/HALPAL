@@ -93,7 +93,7 @@ export function LoginScreen({ navigation }: Props) {
           keyboardShouldPersistTaps="handled"
           showsVerticalScrollIndicator={false}
         >
-          <Text style={[type.label, { color: colors.primaryDark }]}>KAAM</Text>
+          <Text style={[type.label, { color: colors.primaryDark }]}>HALPAL</Text>
           <Text style={styles.headline}>Simple work,{'\n'}better pay.</Text>
           <Text style={styles.subtitle}>
             Sign in to post a quick job, or pick up simple work nearby — better pay than delivery apps.

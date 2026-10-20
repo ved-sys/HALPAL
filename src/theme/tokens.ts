@@ -1,5 +1,5 @@
-// Design tokens for Kaam ("work" — Tamil/Hindi).
-// Direction: a digital job board, not a generic gig-app template.
+// Design tokens for Halpal ("work" — Tamil/Hindi).
+// Direction: a digital job board, not a generic Halpal template.
 // These jobs are currently arranged informally — word of mouth, a notice
 // pinned to a board. The UI leans into that: job posts read like index
 // cards, verification reads like a stamp of trust, not a corporate badge.

@@ -42,7 +42,7 @@ export function FeedScreen({ navigation }: Props) {
     <SafeAreaView style={styles.container} edges={['top']}>
       <View style={styles.header}>
         <View>
-          <Text style={[type.label, { color: colors.primaryDark }]}>KAAM</Text>
+          <Text style={[type.label, { color: colors.primaryDark }]}>HALPAL</Text>
           <Text style={[type.display, { color: colors.ink }]}>Job board</Text>
         </View>
         {mode === 'customer' && (
