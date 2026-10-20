@@ -62,6 +62,7 @@ const workers: WorkerSummary[] = [
 export const jobs: Job[] = [
   {
     id: 'job_1',
+    customerId: 'cust_1',
     description:
       'Moving out of a 2BHK this weekend — need help carrying boxes and furniture down two floors and loading them into a mini-truck outside. About 3 hours of work.',
     categoryTags: ['Loading & Moving Help'],
@@ -78,6 +79,7 @@ export const jobs: Job[] = [
   },
   {
     id: 'job_2',
+    customerId: 'cust_1',
     description:
       'Looking for someone to help carry a 2-seater sofa and a study table up to the 3rd floor (no lift). About 2 hours of work.',
     categoryTags: ['Loading & Moving Help'],
@@ -93,6 +95,7 @@ export const jobs: Job[] = [
   },
   {
     id: 'job_3',
+    customerId: 'cust_1',
     description:
       'Need groceries picked up from the supermarket and dropped at my apartment — full list will be shared once accepted. Should take under an hour.',
     categoryTags: ['Delivery & Pickup'],
@@ -108,6 +111,7 @@ export const jobs: Job[] = [
   },
   {
     id: 'job_4',
+    customerId: 'cust_1',
     description:
       'Need someone to stand in line at the RTO to submit a document and collect a receipt. Should take about 1.5–2 hours depending on the queue.',
     categoryTags: ['Errands & Queueing'],
@@ -185,6 +189,7 @@ export const applicationsByJob: Record<string, JobApplication[]> = {
 export const offerings: WorkerOffering[] = [
   {
     id: 'off_1',
+    workerId: workers[2].id,
     worker: workers[2],
     title: 'Bike Courier — Parcels, Documents & Food Pickup',
     description:
@@ -197,6 +202,7 @@ export const offerings: WorkerOffering[] = [
   },
   {
     id: 'off_2',
+    workerId: workers[0].id,
     worker: workers[0],
     title: 'Home Cleaning & Tidying',
     description:
@@ -209,6 +215,7 @@ export const offerings: WorkerOffering[] = [
   },
   {
     id: 'off_3',
+    workerId: workers[3].id,
     worker: workers[3],
     title: 'Packing & Loading Help',
     description: 'Help with packing boxes, loading/unloading a vehicle, or general labor around the house.',

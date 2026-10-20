@@ -11,7 +11,7 @@ interface StoreShape {
   messagesByChat: Record<string, Message[]>;
   bookingRequests: BookingRequest[];
   otpByJob: Record<string, string>;
-  addJob: (job: Omit<Job, 'moderationStatus'>) => void;
+  addJob: (job: Omit<Job, 'moderationStatus' | 'customerId'>) => void;
   setApplicationStatus: (jobId: string, appId: string, status: ApplicationStatus) => void;
   addOffering: (offering: WorkerOffering) => void;
   addApplication: (jobId: string, application: JobApplication) => void;
@@ -43,14 +43,14 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const [otpByJob, setOtpByJob] = useState<Record<string, string>>({});
   const autoRepliedChats = useRef<Set<string>>(new Set());
 
-  function addJob(job: Omit<Job, 'moderationStatus'>) {
+  function addJob(job: Omit<Job, 'moderationStatus' | 'customerId'>) {
     // Jobs tagged 'Other' don't match a known category, so they're held
     // for review before appearing in the feed — same idea as an offering's
     // moderationStatus.
     const moderationStatus: Job['moderationStatus'] = job.categoryTags.includes('Other')
       ? 'pending_review'
       : 'not_required';
-    setJobs((prev) => [{ ...job, moderationStatus }, ...prev]);
+    setJobs((prev) => [{ ...job, customerId: currentCustomer.id, moderationStatus }, ...prev]);
   }
 
   function setApplicationStatus(jobId: string, appId: string, status: ApplicationStatus) {
@@ -178,6 +178,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
 
     const newJob: Job = {
       id: `job_${Date.now()}`,
+      customerId: bookingRequest.customerId,
       description: offering.description,
       categoryTags: offering.categoryTags,
       budgetMin: offering.rate,

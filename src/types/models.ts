@@ -36,6 +36,7 @@ export interface WorkerSummary {
 
 export interface Job {
   id: string;
+  customerId: string;
   description: string;
   categoryTags: JobCategory[];
   budgetMin: number;
@@ -58,6 +59,9 @@ export interface JobApplication {
   note?: string;
   status: ApplicationStatus;
   appliedAt: string;
+  // Populated only when the query embedded the job (fetchMyApplications),
+  // so the worker's activity list can render without a second round-trip.
+  job?: Job;
 }
 
 export interface Chat {
@@ -72,6 +76,14 @@ export interface Chat {
   workerId: string;
   createdAt: string;
   lastMessageAt: string;
+  // Hydrated by fetchMyChats so a chat list can show who you're talking to
+  // and what about. One `profiles` table backs both roles, so a customer
+  // and a worker have the same shape here.
+  customer?: WorkerSummary;
+  worker?: WorkerSummary;
+  jobDescription?: string;
+  offeringTitle?: string;
+  bookingStatus?: BookingRequest['status'];
 }
 
 export interface Message {
@@ -89,10 +101,23 @@ export interface BookingRequest {
   customerId: string;
   status: 'pending' | 'confirmed' | 'declined' | 'cancelled';
   createdAt: string;
+  offeringTitle?: string;
+}
+
+export interface Review {
+  id: string;
+  jobId: string;
+  reviewerId: string;
+  revieweeId: string;
+  stars: number;
+  tags: string[];
+  reviewText?: string;
+  createdAt: string;
 }
 
 export interface WorkerOffering {
   id: string;
+  workerId: string;
   worker: WorkerSummary;
   title: string;
   description: string;
