@@ -763,6 +763,81 @@ export function submitReview(
   });
 }
 
+// ── Realtime ────────────────────────────────────────────────────────────
+
+export interface RealtimeHandlers {
+  /** Chats the user is in; the messages subscription is scoped to these. */
+  chatIds: string[];
+  onMessage: (message: Message) => void;
+  onChatUpdate: (chat: Partial<Chat> & { id: string }) => void;
+  /** A new chat arrives without its embeds, so the caller refetches. */
+  onNewChat: () => void;
+  onJobUpdate: (job: Job) => void;
+}
+
+/**
+ * One channel covering the three tables whose changes the UI must notice:
+ * messages, chats and jobs. Nothing else is subscribed.
+ *
+ * Realtime applies the same RLS policies as a read, so a row the user
+ * cannot select is never delivered. The messages subscription additionally
+ * narrows to the user's own chat ids server-side, and every handler is
+ * guarded again on the client — a channel outlives a sign-out by a few
+ * milliseconds.
+ *
+ * Returns the unsubscribe function.
+ */
+export function subscribeToChanges(handlers: RealtimeHandlers): () => void {
+  const channel = supabase.channel('halpal-sync');
+  const allowed = new Set(handlers.chatIds);
+
+  if (handlers.chatIds.length > 0) {
+    channel.on(
+      'postgres_changes',
+      {
+        event: '*',
+        schema: 'public',
+        table: 'messages',
+        filter: `chat_id=in.(${handlers.chatIds.join(',')})`,
+      },
+      (payload) => {
+        const row = payload.new as MessageRow | null;
+        if (!row?.id || !allowed.has(row.chat_id)) return;
+        handlers.onMessage(rowToMessage(row));
+      }
+    );
+  }
+
+  channel.on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'chats' }, () => {
+    handlers.onNewChat();
+  });
+
+  channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'chats' }, (payload) => {
+    const row = payload.new as ChatRow | null;
+    if (!row?.id) return;
+    // Scalars only: a change feed carries no embedded profiles, and
+    // overwriting the hydrated ones with undefined would blank the UI.
+    handlers.onChatUpdate({
+      id: row.id,
+      jobId: row.job_id ?? undefined,
+      bookingRequestId: row.booking_request_id ?? undefined,
+      lastMessageAt: row.last_message_at,
+    });
+  });
+
+  channel.on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'jobs' }, (payload) => {
+    const row = payload.new as JobRow | null;
+    if (!row?.id) return;
+    handlers.onJobUpdate(rowToJob(row));
+  });
+
+  channel.subscribe();
+
+  return () => {
+    void supabase.removeChannel(channel);
+  };
+}
+
 /**
  * Temporary development affordance: shows the customer the completion code
  * that production would deliver by SMS. Customer-only, enforced server-side.

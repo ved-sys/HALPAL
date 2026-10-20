@@ -520,6 +520,31 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     setMyJobs((prev) => prev.map((j) => (j.id === incoming.id ? incoming : j)));
   }, []);
 
+  // ── Realtime (Stage D) ────────────────────────────────────────────────
+
+  // Keyed on the chat-id set, since the messages subscription is filtered
+  // server-side by it: joining a new chat has to re-open the channel.
+  const chatIdKey = chats.map((c) => c.id).sort().join(',');
+
+  useEffect(() => {
+    if (!userId) return;
+    const unsubscribe = api.subscribeToChanges({
+      chatIds: chatIdKey ? chatIdKey.split(',') : [],
+      onMessage: (m) => {
+        applyMessageChange(m);
+        // An incoming message from the other side relights the dot; the
+        // open thread clears it again via markChatRead.
+        if (m.senderId !== userId) {
+          setUnreadCounts((prev) => ({ ...prev, [m.chatId]: (prev[m.chatId] ?? 0) + 1 }));
+        }
+      },
+      onChatUpdate: applyChatChange,
+      onNewChat: () => void refreshChats(),
+      onJobUpdate: applyJobChange,
+    });
+    return unsubscribe;
+  }, [userId, chatIdKey, applyMessageChange, applyChatChange, applyJobChange, refreshChats]);
+
   const value = useMemo<StoreShape>(
     () => ({
       jobs,
