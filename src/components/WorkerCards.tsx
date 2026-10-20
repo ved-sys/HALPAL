@@ -22,16 +22,20 @@ export function Avatar({ name, color, size = 44 }: { name: string; color: string
   );
 }
 
+/**
+ * Accept is the only decision offered here. The backend exposes
+ * accept_application (which auto-rejects the rest) but no per-application
+ * shortlist or reject, and RLS blocks the direct UPDATE that would stand
+ * in for them — so those buttons would have had nothing to call.
+ */
 export function ApplicantRow({
   application,
   onAccept,
-  onShortlist,
-  onReject,
+  busy,
 }: {
   application: JobApplication;
   onAccept: () => void;
-  onShortlist: () => void;
-  onReject: () => void;
+  busy?: boolean;
 }) {
   const { worker } = application;
   const decided = application.status === 'accepted' || application.status === 'rejected';
@@ -64,14 +68,18 @@ export function ApplicantRow({
 
       {!decided && (
         <View style={styles.actionRow}>
-          <PrimaryButton label="Accept" variant="teal" onPress={onAccept} style={{ flex: 1 }} />
-          {application.status !== 'shortlisted' && (
-            <PrimaryButton label="Shortlist" variant="outline" onPress={onShortlist} style={{ flex: 1 }} />
-          )}
-          <Pressable onPress={onReject} style={styles.rejectBtn}>
-            <Text style={[type.small, { color: colors.danger }]}>Reject</Text>
-          </Pressable>
+          <PrimaryButton
+            label={busy ? 'Accepting…' : 'Accept'}
+            variant="teal"
+            disabled={busy}
+            onPress={onAccept}
+            style={{ flex: 1 }}
+          />
         </View>
+      )}
+
+      {application.status === 'rejected' && (
+        <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.sm }]}>Not selected</Text>
       )}
     </View>
   );

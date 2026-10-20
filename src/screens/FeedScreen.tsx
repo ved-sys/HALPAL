@@ -1,8 +1,9 @@
 import React, { useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { JobCard } from '@/components/JobCard';
+import { ErrorNote } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
 import { JobCategory } from '@/types/models';
@@ -28,14 +29,13 @@ const allCategories: JobCategory[] = [
 ];
 
 export function FeedScreen({ navigation }: Props) {
-  const { jobs } = useStore();
+  // `jobs` is already the open, non-held board: status and moderation are
+  // filtered server-side by fetchOpenJobs. Only the category chip is local.
+  const { jobs, loading, errors, refreshJobs } = useStore();
   const { mode } = useAppMode();
   const [activeCategory, setActiveCategory] = useState<JobCategory | 'All'>('All');
   const openJobs = jobs.filter(
-    (j) =>
-      (j.status === 'open' || j.status === 'applications_received') &&
-      j.moderationStatus !== 'pending_review' &&
-      (activeCategory === 'All' || j.categoryTags.includes(activeCategory))
+    (j) => activeCategory === 'All' || j.categoryTags.includes(activeCategory)
   );
 
   return (
@@ -76,16 +76,22 @@ export function FeedScreen({ navigation }: Props) {
           );
         })}
       </ScrollView>
+      <ErrorNote message={errors.jobs} style={{ marginHorizontal: spacing.lg }} />
       <FlatList
         data={openJobs}
         keyExtractor={(j) => j.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
+        refreshControl={<RefreshControl refreshing={loading.jobs} onRefresh={() => void refreshJobs()} />}
         renderItem={({ item }) => (
           <JobCard job={item} onPress={() => navigation.navigate('JobDetail', { jobId: item.id })} />
         )}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={[type.body, { color: colors.inkFaint }]}>No open jobs right now.</Text>
+            {loading.jobs ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={[type.body, { color: colors.inkFaint }]}>No open jobs right now.</Text>
+            )}
           </View>
         }
       />

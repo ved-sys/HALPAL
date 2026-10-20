@@ -485,6 +485,32 @@ export async function fetchMyBookingRequests(): Promise<Result<BookingRequest[]>
   }
 }
 
+/**
+ * Unread message count per chat, in one query. Fetching only the unread
+ * rows' chat_id keeps this cheap enough to run alongside the chat list,
+ * which is what the tab-bar dot needs. RLS limits `messages` to chats the
+ * caller participates in.
+ */
+export async function fetchUnreadCounts(): Promise<Result<Record<string, number>>> {
+  const uid = await currentUserId();
+  if (uid.error || !uid.data) return fail(uid.error ?? 'Not signed in.');
+  try {
+    const { data, error } = await supabase
+      .from('messages')
+      .select('chat_id')
+      .eq('read', false)
+      .neq('sender_id', uid.data);
+    if (error) return fail(message(error));
+    const counts: Record<string, number> = {};
+    for (const row of data as { chat_id: string }[]) {
+      counts[row.chat_id] = (counts[row.chat_id] ?? 0) + 1;
+    }
+    return ok(counts);
+  } catch (e) {
+    return fail(message(e));
+  }
+}
+
 export async function fetchMyProfile(): Promise<Result<WorkerSummary>> {
   const uid = await currentUserId();
   if (uid.error || !uid.data) return fail(uid.error ?? 'Not signed in.');

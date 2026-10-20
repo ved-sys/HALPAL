@@ -1,12 +1,12 @@
-import React, { useState } from 'react';
-import { FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import React, { useEffect, useState } from 'react';
+import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, type } from '@/theme/tokens';
-import { PrimaryButton, VerificationStamp } from '@/components/atoms';
+import { ErrorNote, PrimaryButton, VerificationStamp } from '@/components/atoms';
 import { ApplicantRow } from '@/components/WorkerCards';
 import { useStore } from '@/state/store';
+import { useAuth } from '@/state/AuthContext';
 import { useAppMode } from '@/state/AppMode';
-import { currentWorker } from '@/data/mockData';
 import { JobStatus } from '@/types/models';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
@@ -31,57 +31,114 @@ const APPLICABLE_STATUSES: JobStatus[] = ['open', 'applications_received'];
 export function JobDetailScreen({ route, navigation }: Props) {
   const { jobId } = route.params;
   const {
-    jobs,
+    jobsById,
     applications,
-    setApplicationStatus,
+    myApplications,
+    chats,
+    profile,
+    loading,
+    errors,
+    loadJob,
+    loadApplicationsForJob,
+    acceptApplication,
     addApplication,
-    currentWorkerVerified,
-    ensureChatForJob,
-    otpByJob,
     startJob,
     markJobComplete,
     confirmJobCompletion,
     raiseDispute,
+    peekJobOtp,
   } = useStore();
+  const { user } = useAuth();
   const { mode } = useAppMode();
-  const job = jobs.find((j) => j.id === jobId);
+
+  const job = jobsById[jobId];
   const jobApplications = applications[jobId] ?? [];
 
-  const [quotedRate, setQuotedRate] = useState(String(job?.budgetMin ?? ''));
+  const [quotedRate, setQuotedRate] = useState('');
   const [note, setNote] = useState('');
-  const [applied, setApplied] = useState(false);
   const [otpInput, setOtpInput] = useState('');
-  const [otpError, setOtpError] = useState(false);
+  const [otpMismatch, setOtpMismatch] = useState(false);
   const [sosActive, setSosActive] = useState(false);
   const [stars, setStars] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [reviewText, setReviewText] = useState('');
   const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [busy, setBusy] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const [peekedOtp, setPeekedOtp] = useState<string | null>(null);
 
-  if (!job) return null;
+  useEffect(() => {
+    void loadJob(jobId);
+  }, [jobId, loadJob]);
 
-  const alreadyApplied = applied || jobApplications.some((a) => a.worker.id === currentWorker.id);
+  // Only the posting customer can read the application list, so asking as
+  // a worker would just trip RLS.
+  useEffect(() => {
+    if (mode === 'customer') void loadApplicationsForJob(jobId);
+  }, [jobId, mode, loadApplicationsForJob]);
+
+  // Seed the quote with the job's floor once the job itself has loaded.
+  useEffect(() => {
+    if (job && quotedRate === '') setQuotedRate(String(job.budgetMin));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [job?.id]);
+
+  if (!job) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.loadingBox}>
+          {loading.jobs ? <ActivityIndicator color={colors.primary} /> : <ErrorNote message={errors.jobs ?? 'Job not found.'} />}
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const alreadyApplied = myApplications.some((a) => a.jobId === jobId);
+  const isVerified = profile?.isVerified ?? false;
+  const chat = chats.find((c) => c.jobId === jobId);
+  // The job row carries no worker, so the counterparty comes from the chat
+  // that accepting the application opened.
+  const revieweeId = mode === 'customer' ? chat?.workerId : job.customerId;
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
   }
 
-  function handleConfirmCompletion() {
-    const ok = confirmJobCompletion(job!.id, otpInput.trim());
-    setOtpError(!ok);
+  async function run(key: string, action: () => Promise<{ ok: boolean; error: string | null }>) {
+    if (busy) return;
+    setActionError(null);
+    setBusy(key);
+    const res = await action();
+    setBusy(null);
+    if (!res.ok) setActionError(res.error);
   }
 
-  function submitApplication() {
-    addApplication(job!.id, {
-      id: `app_${Date.now()}`,
-      jobId: job!.id,
-      worker: { ...currentWorker, isVerified: currentWorkerVerified },
-      quotedRate: Number(quotedRate) || job!.budgetMin,
-      note: note.trim() || undefined,
-      status: 'applied',
-      appliedAt: new Date().toISOString(),
-    });
-    setApplied(true);
+  async function handleConfirmCompletion() {
+    if (busy) return;
+    setActionError(null);
+    setOtpMismatch(false);
+    setBusy('confirm');
+    const res = await confirmJobCompletion(jobId, otpInput.trim());
+    setBusy(null);
+    if (!res.ok) {
+      setActionError(res.error);
+      return;
+    }
+    setOtpMismatch(!res.matched);
+  }
+
+  async function handlePeekOtp() {
+    setActionError(null);
+    const res = await peekJobOtp(jobId);
+    if (res.error) {
+      setActionError(res.error);
+      return;
+    }
+    setPeekedOtp(res.otp ?? 'unavailable');
+  }
+
+  async function submitApplication() {
+    await run('apply', () => addApplication(jobId, Number(quotedRate) || job.budgetMin, note.trim() || undefined));
   }
 
   return (
@@ -104,22 +161,25 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         </View>
 
-        {CHAT_ELIGIBLE_STATUSES.includes(job.status) && (
+        <ErrorNote message={actionError} style={{ marginHorizontal: spacing.lg }} />
+
+        {CHAT_ELIGIBLE_STATUSES.includes(job.status) && chat && (
           <View style={styles.section}>
             <PrimaryButton
               label="Open chat"
               variant="teal"
-              onPress={() => {
-                const chat = ensureChatForJob(job.id);
-                if (chat) navigation.navigate('Chat', { chatId: chat.id });
-              }}
+              onPress={() => navigation.navigate('Chat', { chatId: chat.id })}
             />
           </View>
         )}
 
         {mode === 'worker' && job.status === 'worker_selected' && (
           <View style={styles.section}>
-            <PrimaryButton label="Start job" onPress={() => startJob(job.id)} />
+            <PrimaryButton
+              label={busy === 'start' ? 'Starting…' : 'Start job'}
+              disabled={busy !== null}
+              onPress={() => void run('start', () => startJob(jobId))}
+            />
           </View>
         )}
 
@@ -127,8 +187,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
           <View style={styles.section}>
             {mode === 'worker' && (
               <PrimaryButton
-                label="Mark complete"
-                onPress={() => markJobComplete(job.id)}
+                label={busy === 'complete' ? 'Marking…' : 'Mark complete'}
+                disabled={busy !== null}
+                onPress={() => void run('complete', () => markJobComplete(jobId))}
                 style={{ marginBottom: spacing.md }}
               />
             )}
@@ -147,10 +208,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           <View style={styles.section}>
             <View style={styles.infoBox}>
               <Text style={[type.body, { color: colors.teal }]}>
-                Job marked complete. Share this code with the customer to confirm:
-              </Text>
-              <Text style={[type.display, { color: colors.ink, marginTop: spacing.xs }]}>
-                {otpByJob[job.id] ?? '——————'}
+                Marked complete. Waiting for the customer to confirm with their code.
               </Text>
             </View>
           </View>
@@ -160,13 +218,13 @@ export function JobDetailScreen({ route, navigation }: Props) {
           <View style={styles.section}>
             <Text style={[type.h2, { color: colors.ink }]}>Confirm completion</Text>
             <Text style={[type.small, { color: colors.inkSoft, marginTop: spacing.xs }]}>
-              Ask the worker for the 6-digit code and enter it below.
+              Enter the 6-digit completion code for this job.
             </Text>
             <TextInput
               value={otpInput}
               onChangeText={(t) => {
                 setOtpInput(t);
-                setOtpError(false);
+                setOtpMismatch(false);
               }}
               keyboardType="numeric"
               maxLength={6}
@@ -174,19 +232,43 @@ export function JobDetailScreen({ route, navigation }: Props) {
               placeholderTextColor={colors.inkFaint}
               style={[styles.input, { marginTop: spacing.sm }]}
             />
-            {otpError && (
+            {otpMismatch && (
               <Text style={[type.small, { color: colors.danger, marginTop: spacing.xs }]}>
                 That code doesn't match. Try again.
               </Text>
             )}
             <PrimaryButton
-              label="Confirm completion"
-              onPress={handleConfirmCompletion}
-              disabled={otpInput.trim().length !== 6}
+              label={busy === 'confirm' ? 'Confirming…' : 'Confirm completion'}
+              onPress={() => void handleConfirmCompletion()}
+              disabled={otpInput.trim().length !== 6 || busy !== null}
               style={{ marginTop: spacing.md }}
             />
-            <Pressable onPress={() => raiseDispute(job.id)} style={{ marginTop: spacing.md }}>
-              <Text style={[type.small, { color: colors.danger }]}>Report a problem</Text>
+
+            {/* Temporary development affordance. In production this code is
+                delivered out of band; dev_peek_job_otp exists only so the
+                flow is testable, and the server restricts it to the
+                customer. The worker's view never shows it. */}
+            <View style={styles.devBox}>
+              <Text style={[type.label, { color: colors.inkFaint }]}>DEV ONLY</Text>
+              {peekedOtp ? (
+                <Text style={[type.mono, { color: colors.ink, marginTop: spacing.xs }]}>{peekedOtp}</Text>
+              ) : (
+                <Pressable onPress={() => void handlePeekOtp()}>
+                  <Text style={[type.small, { color: colors.primaryDark, marginTop: spacing.xs }]}>
+                    Reveal completion code (development shortcut)
+                  </Text>
+                </Pressable>
+              )}
+            </View>
+
+            <Pressable
+              onPress={() => void run('dispute', () => raiseDispute(jobId))}
+              disabled={busy !== null}
+              style={{ marginTop: spacing.md }}
+            >
+              <Text style={[type.small, { color: colors.danger }]}>
+                {busy === 'dispute' ? 'Reporting…' : 'Report a problem'}
+              </Text>
             </Pressable>
           </View>
         )}
@@ -244,7 +326,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 <PrimaryButton
                   label="Submit review"
                   onPress={() => setReviewSubmitted(true)}
-                  disabled={stars === 0}
+                  disabled={stars === 0 || !revieweeId}
                   style={{ marginTop: spacing.md }}
                 />
               </View>
@@ -252,11 +334,11 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {mode === 'worker' && APPLICABLE_STATUSES.includes(job.status) && (
+        {mode === 'worker' && APPLICABLE_STATUSES.includes(job.status) && job.customerId !== user?.id && (
           <View style={styles.section}>
             <Text style={[type.h2, { color: colors.ink }]}>Apply to this job</Text>
 
-            {!currentWorkerVerified ? (
+            {!isVerified ? (
               <View style={styles.warningBox}>
                 <Text style={[type.small, { color: colors.danger }]}>
                   Complete verification from your profile to apply.
@@ -265,7 +347,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
             ) : alreadyApplied ? (
               <View style={styles.infoBox}>
                 <Text style={[type.body, { color: colors.teal }]}>
-                  Application sent. You'll be notified if the customer accepts, shortlists, or rejects it.
+                  Application sent. You'll see the outcome under My Activity.
                 </Text>
               </View>
             ) : (
@@ -291,8 +373,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   style={[styles.input, { height: 80, textAlignVertical: 'top' }]}
                 />
                 <PrimaryButton
-                  label="Submit application"
-                  onPress={submitApplication}
+                  label={busy === 'apply' ? 'Sending…' : 'Submit application'}
+                  disabled={busy !== null}
+                  onPress={() => void submitApplication()}
                   style={{ marginTop: spacing.lg }}
                 />
               </View>
@@ -305,7 +388,10 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <Text style={[type.h2, { color: colors.ink, marginBottom: spacing.sm }]}>
               Applications ({jobApplications.length})
             </Text>
-            {jobApplications.length === 0 ? (
+            <ErrorNote message={errors.applications} />
+            {loading.applications && jobApplications.length === 0 ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : jobApplications.length === 0 ? (
               <Text style={[type.body, { color: colors.inkFaint }]}>No applications yet.</Text>
             ) : (
               <FlatList
@@ -315,9 +401,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 renderItem={({ item }) => (
                   <ApplicantRow
                     application={item}
-                    onAccept={() => setApplicationStatus(job.id, item.id, 'accepted')}
-                    onShortlist={() => setApplicationStatus(job.id, item.id, 'shortlisted')}
-                    onReject={() => setApplicationStatus(job.id, item.id, 'rejected')}
+                    busy={busy === `accept_${item.id}`}
+                    onAccept={() => void run(`accept_${item.id}`, () => acceptApplication(jobId, item.id))}
                   />
                 )}
               />
@@ -331,15 +416,16 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
 function MetaItem({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.metaItem}>
-      <Text style={[type.label, { color: colors.inkFaint }]}>{label.toUpperCase()}</Text>
-      <Text style={[type.bodyStrong, { color: colors.ink, marginTop: 2 }]}>{value}</Text>
+    <View style={{ flex: 1 }}>
+      <Text style={[type.label, { color: colors.inkFaint }]}>{label}</Text>
+      <Text style={[type.small, { color: colors.ink, marginTop: 2 }]}>{value}</Text>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
+  loadingBox: { padding: spacing.xxl, alignItems: 'center' },
   headerCard: {
     backgroundColor: colors.surface,
     padding: spacing.lg,
@@ -353,8 +439,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: colors.canvasAlt,
   },
-  metaGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.lg, marginTop: spacing.lg },
-  metaItem: { minWidth: '40%' },
+  metaGrid: { flexDirection: 'row', gap: spacing.md, marginTop: spacing.lg },
   section: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg },
   input: {
     borderWidth: 1,
@@ -367,26 +452,35 @@ const styles = StyleSheet.create({
     fontSize: 15,
     color: colors.ink,
   },
-  warningBox: {
-    backgroundColor: colors.dangerSoft,
-    padding: spacing.md,
-    borderRadius: radius.md,
-    marginTop: spacing.sm,
-  },
   infoBox: {
     backgroundColor: colors.tealSoft,
-    padding: spacing.md,
     borderRadius: radius.md,
+    padding: spacing.md,
     marginTop: spacing.sm,
   },
-  sosBanner: {
+  warningBox: {
     backgroundColor: colors.dangerSoft,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.sm,
+  },
+  devBox: {
+    marginTop: spacing.md,
     padding: spacing.md,
     borderRadius: radius.md,
+    borderWidth: 1,
+    borderStyle: 'dashed',
+    borderColor: colors.borderStrong,
+    backgroundColor: colors.canvasAlt,
+  },
+  sosBanner: {
     marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.md,
+    backgroundColor: colors.dangerSoft,
   },
   starRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
-  pillRow: { flexDirection: 'row', gap: spacing.sm, flexWrap: 'wrap', marginTop: spacing.md },
+  pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },
   tagPill: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,

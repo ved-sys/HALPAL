@@ -1,8 +1,9 @@
 import React from 'react';
-import { FlatList, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, type } from '@/theme/tokens';
 import { OfferingCard } from '@/components/WorkerCards';
+import { ErrorNote } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -11,9 +12,9 @@ import { RootStackParamList } from '@/navigation/RootNavigator';
 type Props = NativeStackScreenProps<RootStackParamList, 'Tabs'>;
 
 export function OfferingsScreen({ navigation }: Props) {
-  const { offerings } = useStore();
+  // fetchOfferings already restricts to active, non-rejected rows.
+  const { offerings, loading, errors, refreshOfferings } = useStore();
   const { mode } = useAppMode();
-  const visible = offerings.filter((o) => o.status === 'active' && o.moderationStatus !== 'rejected');
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -26,13 +27,24 @@ export function OfferingsScreen({ navigation }: Props) {
             : 'What other workers are listing. Post your own from your profile.'}
         </Text>
       </View>
+      <ErrorNote message={errors.offerings} style={{ marginHorizontal: spacing.lg }} />
       <FlatList
-        data={visible}
+        data={offerings}
         keyExtractor={(o) => o.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl, paddingTop: spacing.sm }}
+        refreshControl={<RefreshControl refreshing={loading.offerings} onRefresh={() => void refreshOfferings()} />}
         renderItem={({ item }) => (
           <OfferingCard offering={item} onPress={() => navigation.navigate('OfferingDetail', { offeringId: item.id })} />
         )}
+        ListEmptyComponent={
+          <View style={styles.empty}>
+            {loading.offerings ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={[type.body, { color: colors.inkFaint }]}>No offerings listed yet.</Text>
+            )}
+          </View>
+        }
       />
     </SafeAreaView>
   );
@@ -41,4 +53,5 @@ export function OfferingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
+  empty: { padding: spacing.xxl, alignItems: 'center' },
 });

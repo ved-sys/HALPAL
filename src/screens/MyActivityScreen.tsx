@@ -1,10 +1,10 @@
 import React from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
-import { currentWorker } from '@/data/mockData';
+import { ErrorNote } from '@/components/atoms';
 import { JobStatus } from '@/types/models';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -29,18 +29,30 @@ const statusTone: Record<JobStatus, { bg: string; fg: string; label: string }> =
 };
 
 export function MyActivityScreen({ navigation }: Props) {
-  const { jobs, applications } = useStore();
+  const { myJobs, myApplications, loading, errors, refreshJobs, refreshMyApplications } = useStore();
   const { mode } = useAppMode();
 
   if (mode === 'customer') {
-    const myJobs = jobs; // in this mock, all posted jobs belong to the current customer
     return (
       <SafeAreaView style={styles.container} edges={['top']}>
         <Header title="Your posted jobs" subtitle="Track applications and job status here." />
+        <ErrorNote message={errors.jobs} style={{ marginHorizontal: spacing.lg }} />
         <FlatList
           data={myJobs}
           keyExtractor={(j) => j.id}
           contentContainerStyle={{ paddingBottom: spacing.xxxl }}
+          refreshControl={<RefreshControl refreshing={loading.jobs} onRefresh={() => void refreshJobs()} />}
+          ListEmptyComponent={
+            <View style={styles.empty}>
+              {loading.jobs ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Text style={[type.body, { color: colors.inkFaint }]}>
+                  You haven't posted a job yet.
+                </Text>
+              )}
+            </View>
+          }
           renderItem={({ item }) => {
             const tone = statusTone[item.status];
             return (
@@ -51,7 +63,7 @@ export function MyActivityScreen({ navigation }: Props) {
                       {item.description}
                     </Text>
                     <Text style={[type.small, { color: colors.inkFaint, marginTop: 2 }]}>
-                      {item.locationLabel} · {applications[item.id]?.length ?? 0} applications
+                      {item.locationLabel} · {item.applicantCount} applications
                     </Text>
                   </View>
                   <View style={[styles.statusChip, { backgroundColor: tone.bg }]}>
@@ -66,20 +78,21 @@ export function MyActivityScreen({ navigation }: Props) {
     );
   }
 
-  // Worker mode: flatten this worker's applications across all jobs
-  const myApplications = Object.values(applications)
-    .flat()
-    .filter((a) => a.worker.id === currentWorker.id);
-
+  // Worker mode: fetchMyApplications already scopes to this worker and
+  // embeds each application's job.
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <Header title="Your applications" subtitle="Jobs you've applied to, and where they stand." />
+      <ErrorNote message={errors.applications} style={{ marginHorizontal: spacing.lg }} />
       <FlatList
         data={myApplications}
         keyExtractor={(a) => a.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
+        refreshControl={
+          <RefreshControl refreshing={loading.applications} onRefresh={() => void refreshMyApplications()} />
+        }
         renderItem={({ item }) => {
-          const job = jobs.find((j) => j.id === item.jobId);
+          const job = item.job;
           if (!job) return null;
           const label =
             item.status === 'accepted'
@@ -117,9 +130,13 @@ export function MyActivityScreen({ navigation }: Props) {
         }}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={[type.body, { color: colors.inkFaint }]}>
-              You haven't applied to anything yet — browse the feed to get started.
-            </Text>
+            {loading.applications ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={[type.body, { color: colors.inkFaint }]}>
+                You haven't applied to anything yet — browse the feed to get started.
+              </Text>
+            )}
           </View>
         }
       />

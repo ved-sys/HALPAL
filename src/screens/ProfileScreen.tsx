@@ -1,27 +1,56 @@
-import React from 'react';
-import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useState } from 'react';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { Avatar } from '@/components/WorkerCards';
-import { PrimaryButton, RatingLine } from '@/components/atoms';
-import { currentWorker } from '@/data/mockData';
+import { ErrorNote, PrimaryButton, RatingLine } from '@/components/atoms';
 import { useAppMode } from '@/state/AppMode';
 import { useAuth } from '@/state/AuthContext';
 import { useStore } from '@/state/store';
 
 export function ProfileScreen() {
   const { mode, setMode } = useAppMode();
-  const { currentWorkerVerified, verifyCurrentWorker } = useStore();
+  const { profile, profileError, verifyCurrentWorker } = useStore();
   const { signOut } = useAuth();
+  const [verifying, setVerifying] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function handleVerify() {
+    if (verifying) return;
+    setActionError(null);
+    setVerifying(true);
+    const res = await verifyCurrentWorker();
+    setVerifying(false);
+    if (!res.ok) setActionError(res.error);
+  }
+
+  // The profile row is the only source for name, rating and skills. Until
+  // it arrives there is nothing truthful to render in its place.
+  if (!profile) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.loadingBox}>
+          {profileError ? (
+            <ErrorNote message={profileError} />
+          ) : (
+            <ActivityIndicator color={colors.primary} />
+          )}
+          <PrimaryButton label="Sign out" variant="outline" onPress={() => void signOut()} style={{ marginTop: spacing.lg }} />
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const isVerified = profile.isVerified;
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxxl }}>
         <View style={styles.header}>
-          <Avatar name={currentWorker.fullName} color={currentWorker.avatarColor} size={64} />
+          <Avatar name={profile.fullName} color={profile.avatarColor} size={64} />
           <View style={{ marginLeft: spacing.lg }}>
-            <Text style={[type.h1, { color: colors.ink }]}>{currentWorker.fullName}</Text>
-            <RatingLine rating={currentWorker.avgRating} count={currentWorker.totalJobsCompleted} />
+            <Text style={[type.h1, { color: colors.ink }]}>{profile.fullName}</Text>
+            <RatingLine rating={profile.avgRating} count={profile.totalJobsCompleted} />
           </View>
         </View>
 
@@ -39,40 +68,47 @@ export function ProfileScreen() {
         <View style={styles.section}>
           <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>VERIFICATION</Text>
           <View style={[styles.tierRow, shadow.card]}>
-            <View style={[styles.tierDot, { backgroundColor: currentWorkerVerified ? colors.success : colors.border }]} />
+            <View style={[styles.tierDot, { backgroundColor: isVerified ? colors.success : colors.border }]} />
             <View style={{ flex: 1 }}>
               <Text style={[type.bodyStrong, { color: colors.ink }]}>
-                {currentWorkerVerified ? 'Verified' : 'Not verified'}
+                {isVerified ? 'Verified' : 'Not verified'}
               </Text>
               <Text style={[type.small, { color: colors.inkFaint }]}>
-                {currentWorkerVerified
+                {isVerified
                   ? 'Your ID has been verified.'
                   : 'Verify your ID to apply for jobs and post offerings.'}
               </Text>
             </View>
-            {currentWorkerVerified ? (
+            {isVerified ? (
               <Text style={[type.smallStrong, { color: colors.success }]}>✓ Done</Text>
             ) : (
-              <Pressable style={styles.verifyBtn} onPress={verifyCurrentWorker}>
-                <Text style={[type.smallStrong, { color: colors.primaryDark }]}>Verify your ID</Text>
+              <Pressable style={styles.verifyBtn} disabled={verifying} onPress={() => void handleVerify()}>
+                <Text style={[type.smallStrong, { color: colors.primaryDark }]}>
+                  {verifying ? 'Verifying…' : 'Verify your ID'}
+                </Text>
               </Pressable>
             )}
           </View>
+          <ErrorNote message={actionError} />
         </View>
 
         <View style={styles.section}>
           <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>SKILLS</Text>
-          <View style={styles.skillRow}>
-            {currentWorker.skills.map((s) => (
-              <View key={s} style={styles.skillChip}>
-                <Text style={[type.small, { color: colors.inkSoft }]}>{s}</Text>
-              </View>
-            ))}
-          </View>
+          {profile.skills.length === 0 ? (
+            <Text style={[type.small, { color: colors.inkFaint }]}>No skills listed yet.</Text>
+          ) : (
+            <View style={styles.skillRow}>
+              {profile.skills.map((s) => (
+                <View key={s} style={styles.skillChip}>
+                  <Text style={[type.small, { color: colors.inkSoft }]}>{s}</Text>
+                </View>
+              ))}
+            </View>
+          )}
         </View>
 
         <View style={styles.section}>
-          <PrimaryButton label="Sign out" variant="outline" onPress={signOut} />
+          <PrimaryButton label="Sign out" variant="outline" onPress={() => void signOut()} />
         </View>
       </ScrollView>
     </SafeAreaView>
@@ -89,6 +125,7 @@ function ModeButton({ label, active, onPress }: { label: string; active: boolean
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
+  loadingBox: { padding: spacing.xxl, alignItems: 'center' },
   header: {
     flexDirection: 'row',
     alignItems: 'center',

@@ -1,36 +1,24 @@
 import React from 'react';
-import { FlatList, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
+import { ErrorNote } from '@/components/atoms';
 import { useStore } from '@/state/store';
+import { useAuth } from '@/state/AuthContext';
 import { useAppMode } from '@/state/AppMode';
-import { currentCustomer, currentWorker } from '@/data/mockData';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Tabs'>;
 
 export function MessagesScreen({ navigation }: Props) {
-  const { chats, messagesByChat, jobs, applications, offerings, bookingRequests } = useStore();
+  // RLS restricts `chats` to its two participants, so no client-side
+  // filtering is needed — every row here is one the user belongs to. The
+  // mode only decides which side of the conversation to name.
+  const { chats, messagesByChat, unreadCounts, loading, errors, refreshChats } = useStore();
+  const { user } = useAuth();
   const { mode } = useAppMode();
-  const currentUserId = mode === 'worker' ? currentWorker.id : currentCustomer.id;
-
-  // Every seeded offering belongs to an NPC worker, never the interactive
-  // worker persona — so a pending booking's workerId never matches
-  // currentWorker.id. Without this carve-out, worker mode could never
-  // reach the chat to confirm it. The carve-out only holds while the
-  // booking is 'pending'; once resolved the chat falls back to the
-  // ordinary strict workerId match, same as any job chat.
-  const myChats = chats
-    .filter((c) => {
-      if (mode === 'customer') return c.customerId === currentUserId;
-      if (c.workerId === currentUserId) return true;
-      const pendingBooking =
-        c.bookingRequestId && bookingRequests.find((b) => b.id === c.bookingRequestId && b.status === 'pending');
-      return Boolean(pendingBooking);
-    })
-    .slice()
-    .sort((a, b) => new Date(b.lastMessageAt).getTime() - new Date(a.lastMessageAt).getTime());
+  const currentUserId = user?.id ?? '';
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -38,31 +26,28 @@ export function MessagesScreen({ navigation }: Props) {
         <Text style={[type.label, { color: colors.primaryDark }]}>MESSAGES</Text>
         <Text style={[type.display, { color: colors.ink }]}>Chats</Text>
       </View>
+      <ErrorNote message={errors.chats} style={{ marginHorizontal: spacing.lg }} />
       <FlatList
-        data={myChats}
+        data={chats}
         keyExtractor={(c) => c.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
+        refreshControl={<RefreshControl refreshing={loading.chats} onRefresh={() => void refreshChats()} />}
         renderItem={({ item }) => {
-          const job = jobs.find((j) => j.id === item.jobId);
-          const bookingRequest = item.bookingRequestId
-            ? bookingRequests.find((b) => b.id === item.bookingRequestId)
-            : undefined;
-          const offering = bookingRequest ? offerings.find((o) => o.id === bookingRequest.offeringId) : undefined;
-          const subtitle = job?.description ?? offering?.title ?? 'Booking request';
-          const accepted = (applications[item.jobId ?? ''] ?? []).find((a) => a.status === 'accepted');
-          const otherName =
-            mode === 'worker'
-              ? currentCustomer.fullName
-              : accepted?.worker.fullName ?? offering?.worker.fullName ?? 'Worker';
-          const messages = messagesByChat[item.id] ?? [];
-          const lastMessage = messages[messages.length - 1];
-          const hasUnread = messages.some((m) => m.senderId !== currentUserId && !m.read);
+          const other = currentUserId === item.customerId ? item.worker : item.customer;
+          const subtitle = item.jobDescription ?? item.offeringTitle ?? 'Booking request';
+          // Only threads already opened have their messages in memory; the
+          // rest show no preview rather than a guessed one.
+          const loaded = messagesByChat[item.id];
+          const lastMessage = loaded?.[loaded.length - 1];
+          const hasUnread = (unreadCounts[item.id] ?? 0) > 0;
           return (
             <Pressable onPress={() => navigation.navigate('Chat', { chatId: item.id })}>
               <View style={[styles.row, shadow.card]}>
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowHeader}>
-                    <Text style={[type.bodyStrong, { color: colors.ink }]}>{otherName}</Text>
+                    <Text style={[type.bodyStrong, { color: colors.ink }]}>
+                      {other?.fullName ?? (currentUserId === item.customerId ? 'Worker' : 'Customer')}
+                    </Text>
                     {hasUnread && <View style={styles.unreadDot} />}
                   </View>
                   <Text style={[type.small, { color: colors.inkFaint, marginTop: 2 }]} numberOfLines={1}>
@@ -80,9 +65,13 @@ export function MessagesScreen({ navigation }: Props) {
         }}
         ListEmptyComponent={
           <View style={styles.empty}>
-            <Text style={[type.body, { color: colors.inkFaint }]}>
-              No conversations yet — a chat opens once a worker is accepted for a job.
-            </Text>
+            {loading.chats ? (
+              <ActivityIndicator color={colors.primary} />
+            ) : (
+              <Text style={[type.body, { color: colors.inkFaint }]}>
+                No conversations yet — a chat opens once a worker is accepted for a job.
+              </Text>
+            )}
           </View>
         }
       />

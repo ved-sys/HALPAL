@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, type } from '@/theme/tokens';
-import { PrimaryButton } from '@/components/atoms';
+import { ErrorNote, PrimaryButton } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { categoryDescription, categoryColor, JobCategory } from '@/types/models';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -22,6 +22,8 @@ const allCategories: JobCategory[] = [
 
 export function PostJobScreen({ navigation }: Props) {
   const { addJob } = useStore();
+  const [submitting, setSubmitting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [selectedCategories, setSelectedCategories] = useState<JobCategory[]>([]);
   const [description, setDescription] = useState('');
   const [budgetMin, setBudgetMin] = useState('');
@@ -44,9 +46,13 @@ export function PostJobScreen({ navigation }: Props) {
     );
   }
 
-  function submit() {
-    addJob({
-      id: `job_${Date.now()}`,
+  async function submit() {
+    if (submitting) return;
+    setActionError(null);
+    setSubmitting(true);
+    // id, status, origin, createdAt and the moderation hold are all set
+    // server-side by createJob.
+    const res = await addJob({
       description: description.trim(),
       categoryTags: selectedCategories,
       budgetMin: Number(budgetMin),
@@ -54,11 +60,12 @@ export function PostJobScreen({ navigation }: Props) {
       urgency,
       scheduledDatetime: urgency === 'scheduled' ? scheduledDatetime.trim() || undefined : undefined,
       locationLabel: location.trim(),
-      status: 'open',
-      origin: 'customer_posted',
-      createdAt: new Date().toISOString(),
-      applicantCount: 0,
     });
+    setSubmitting(false);
+    if (!res.ok) {
+      setActionError(res.error);
+      return;
+    }
     navigation.goBack();
   }
 
@@ -167,11 +174,12 @@ export function PostJobScreen({ navigation }: Props) {
             </Field>
 
             <PrimaryButton
-              label="Post job"
-              onPress={submit}
-              disabled={!canSubmit}
+              label={submitting ? 'Posting…' : 'Post job'}
+              onPress={() => void submit()}
+              disabled={!canSubmit || submitting}
               style={{ marginTop: spacing.xl }}
             />
+            <ErrorNote message={actionError} />
           </>
         )}
       </ScrollView>

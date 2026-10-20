@@ -71,6 +71,19 @@ export function PrimaryButton({
   );
 }
 
+/**
+ * Renders nothing when there is no error, so a screen can keep one of
+ * these mounted wherever a failure belongs without branching.
+ */
+export function ErrorNote({ message, style }: { message?: string | null; style?: ViewStyle }) {
+  if (!message) return null;
+  return (
+    <View style={[styles.errorNote, style]}>
+      <Text style={[type.small, { color: colors.danger }]}>{message}</Text>
+    </View>
+  );
+}
+
 export function RatingLine({ rating, count }: { rating: number; count: number }) {
   return (
     <View style={styles.ratingRow}>
@@ -192,6 +205,13 @@ const styles = StyleSheet.create({
     borderColor: colors.borderStrong,
   },
   ratingRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  errorNote: {
+    backgroundColor: colors.dangerSoft,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    marginTop: spacing.sm,
+  },
   pill: {
     paddingHorizontal: 12,
     paddingVertical: 6,

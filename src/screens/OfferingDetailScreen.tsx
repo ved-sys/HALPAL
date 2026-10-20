@@ -1,12 +1,11 @@
-import React from 'react';
+import React, { useEffect, useState } from 'react';
 import { ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, type } from '@/theme/tokens';
-import { PrimaryButton, RatingLine, VerificationStamp } from '@/components/atoms';
+import { ErrorNote, PrimaryButton, RatingLine, VerificationStamp } from '@/components/atoms';
 import { Avatar } from '@/components/WorkerCards';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
-import { currentCustomer } from '@/data/mockData';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
@@ -14,15 +13,43 @@ type Props = NativeStackScreenProps<RootStackParamList, 'OfferingDetail'>;
 
 export function OfferingDetailScreen({ route, navigation }: Props) {
   const { offeringId } = route.params;
-  const { offerings, requestOfferingBooking } = useStore();
+  const { offerings, requestOfferingBooking, refreshOfferings, loading } = useStore();
   const { mode } = useAppMode();
   const offering = offerings.find((o) => o.id === offeringId);
+  const [requesting, setRequesting] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
-  if (!offering) return null;
+  // Reached from the list, so the row is normally in memory already; this
+  // covers a cold navigation (deep link, reload) without inventing data.
+  useEffect(() => {
+    if (!offering && !loading.offerings) void refreshOfferings();
+  }, [offering, loading.offerings, refreshOfferings]);
 
-  function handleRequestBooking() {
-    const chat = requestOfferingBooking(offering!.id, currentCustomer.id);
-    if (chat) navigation.replace('Chat', { chatId: chat.id });
+  if (!offering) {
+    return (
+      <SafeAreaView style={styles.container} edges={['top']}>
+        <View style={styles.section}>
+          <Text style={[type.body, { color: colors.inkFaint }]}>
+            {loading.offerings ? 'Loading offering…' : 'Offering not found.'}
+          </Text>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  async function handleRequestBooking() {
+    if (requesting) return;
+    setActionError(null);
+    setRequesting(true);
+    // The RPC opens the booking request and its chat together, and hands
+    // back the chat id to jump straight into.
+    const res = await requestOfferingBooking(offeringId);
+    setRequesting(false);
+    if (!res.ok || !res.chatId) {
+      setActionError(res.error ?? 'Could not request the booking.');
+      return;
+    }
+    navigation.replace('Chat', { chatId: res.chatId });
   }
 
   return (
@@ -58,7 +85,12 @@ export function OfferingDetailScreen({ route, navigation }: Props) {
 
         {mode === 'customer' ? (
           <View style={styles.section}>
-            <PrimaryButton label="Request booking" onPress={handleRequestBooking} />
+            <PrimaryButton
+              label={requesting ? 'Requesting…' : 'Request booking'}
+              disabled={requesting}
+              onPress={() => void handleRequestBooking()}
+            />
+            <ErrorNote message={actionError} />
             <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.sm }]}>
               This opens a chat with {offering.worker.fullName.split(' ')[0]} right away — they'll confirm the
               booking once you've worked out the details.

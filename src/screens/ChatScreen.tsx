@@ -1,11 +1,21 @@
 import React, { useEffect, useState } from 'react';
-import { FlatList, KeyboardAvoidingView, Platform, Pressable, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  ActivityIndicator,
+  FlatList,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, type } from '@/theme/tokens';
-import { PrimaryButton } from '@/components/atoms';
+import { ErrorNote, PrimaryButton } from '@/components/atoms';
 import { useStore } from '@/state/store';
+import { useAuth } from '@/state/AuthContext';
 import { useAppMode } from '@/state/AppMode';
-import { currentCustomer, currentWorker } from '@/data/mockData';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
@@ -13,30 +23,54 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 export function ChatScreen({ route }: Props) {
   const { chatId } = route.params;
-  const { messagesByChat, sendMessage, markChatRead, chats, bookingRequests, confirmBooking } = useStore();
+  const { messagesByChat, sendMessage, markChatRead, loadMessages, chats, confirmBooking, loading, errors } =
+    useStore();
+  const { user } = useAuth();
   const { mode } = useAppMode();
-  const currentUserId = mode === 'worker' ? currentWorker.id : currentCustomer.id;
+  const currentUserId = user?.id ?? '';
   const messages = messagesByChat[chatId] ?? [];
   const [text, setText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [confirming, setConfirming] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const chat = chats.find((c) => c.id === chatId);
-  const bookingRequest = chat?.bookingRequestId
-    ? bookingRequests.find((b) => b.id === chat.bookingRequestId)
-    : undefined;
-  const showConfirmBooking = mode === 'worker' && bookingRequest?.status === 'pending';
+  // bookingStatus rides along on the chat row (see fetchMyChats), so the
+  // worker's confirm affordance needs no separate booking lookup.
+  const showConfirmBooking =
+    mode === 'worker' && chat?.bookingRequestId != null && chat.bookingStatus === 'pending';
 
   useEffect(() => {
-    markChatRead(chatId, currentUserId);
-    // Also re-mark on new incoming messages (e.g. the auto-reply) while the
-    // thread is still open, so the unread dot doesn't relight behind it.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatId, currentUserId, messages.length]);
+    void loadMessages(chatId);
+  }, [chatId, loadMessages]);
 
-  function handleSend() {
+  // Clearing unread is a server call, so it runs on open and whenever new
+  // messages land while the thread is in the foreground.
+  useEffect(() => {
+    void markChatRead(chatId);
+  }, [chatId, markChatRead, messages.length]);
+
+  async function handleSend() {
     const trimmed = text.trim();
-    if (!trimmed) return;
-    sendMessage(chatId, currentUserId, trimmed);
+    if (!trimmed || sending) return;
+    setActionError(null);
+    setSending(true);
+    const res = await sendMessage(chatId, trimmed);
+    setSending(false);
+    if (!res.ok) {
+      setActionError(res.error);
+      return;
+    }
     setText('');
+  }
+
+  async function handleConfirmBooking() {
+    if (!chat?.bookingRequestId || confirming) return;
+    setActionError(null);
+    setConfirming(true);
+    const res = await confirmBooking(chat.bookingRequestId);
+    setConfirming(false);
+    if (!res.ok) setActionError(res.error);
   }
 
   return (
@@ -56,19 +90,25 @@ export function ChatScreen({ route }: Props) {
           }}
           ListEmptyComponent={
             <View style={styles.empty}>
-              <Text style={[type.body, { color: colors.inkFaint }]}>Say hello to get started.</Text>
+              {loading.messages ? (
+                <ActivityIndicator color={colors.primary} />
+              ) : (
+                <Text style={[type.body, { color: colors.inkFaint }]}>Say hello to get started.</Text>
+              )}
             </View>
           }
         />
+        <ErrorNote message={actionError ?? errors.messages} style={{ marginHorizontal: spacing.lg }} />
         {showConfirmBooking && (
           <View style={styles.confirmBanner}>
             <Text style={[type.small, { color: colors.inkSoft, marginBottom: spacing.sm }]}>
               This customer wants to book your service.
             </Text>
             <PrimaryButton
-              label="Confirm booking"
+              label={confirming ? 'Confirming…' : 'Confirm booking'}
               variant="teal"
-              onPress={() => confirmBooking(bookingRequest!.id)}
+              disabled={confirming}
+              onPress={() => void handleConfirmBooking()}
             />
           </View>
         )}
@@ -79,10 +119,15 @@ export function ChatScreen({ route }: Props) {
             placeholder="Message"
             placeholderTextColor={colors.inkFaint}
             style={styles.input}
-            onSubmitEditing={handleSend}
+            editable={!sending}
+            onSubmitEditing={() => void handleSend()}
           />
-          <Pressable style={styles.sendBtn} onPress={handleSend}>
-            <Text style={[type.bodyStrong, { color: colors.onPrimary }]}>Send</Text>
+          <Pressable
+            style={[styles.sendBtn, sending && { opacity: 0.5 }]}
+            disabled={sending}
+            onPress={() => void handleSend()}
+          >
+            <Text style={[type.bodyStrong, { color: colors.onPrimary }]}>{sending ? '…' : 'Send'}</Text>
           </Pressable>
         </View>
       </SafeAreaView>

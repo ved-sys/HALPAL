@@ -1,322 +1,627 @@
-import React, { createContext, useContext, useRef, useState } from 'react';
-import { applicationsByJob, currentCustomer, currentWorker, jobs as seedJobs, offerings as seedOfferings } from '@/data/mockData';
-import { ApplicationStatus, BookingRequest, Chat, Job, JobApplication, Message, WorkerOffering } from '@/types/models';
+/**
+ * Server-backed store. Every read and write goes through src/lib/api.ts;
+ * nothing here holds invented data. Mutating actions are async, return
+ * { ok, error } so the calling screen can show its own failure, and
+ * refetch whatever they changed afterwards. No optimistic updates — the
+ * server is the only thing that decides whether a transition happened.
+ *
+ * AppMode is deliberately not consulted here. It decides which queries a
+ * screen asks for, never who the user is; identity comes from AuthContext.
+ */
+import React, { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import * as api from '@/lib/api';
+import { useAuth } from '@/state/AuthContext';
+import {
+  BookingRequest,
+  Chat,
+  Job,
+  JobApplication,
+  Message,
+  Review,
+  WorkerOffering,
+  WorkerSummary,
+} from '@/types/models';
+
+export type Collection = 'jobs' | 'applications' | 'chats' | 'messages' | 'offerings' | 'bookingRequests';
+
+const COLLECTIONS: Collection[] = ['jobs', 'applications', 'chats', 'messages', 'offerings', 'bookingRequests'];
+
+export interface ActionResult {
+  ok: boolean;
+  error: string | null;
+}
+
+const succeeded: ActionResult = { ok: true, error: null };
+const failed = (error: string): ActionResult => ({ ok: false, error });
+
+type Flags = Record<Collection, boolean>;
+type Errors = Record<Collection, string | null>;
+
+const noFlags = (): Flags => ({
+  jobs: false,
+  applications: false,
+  chats: false,
+  messages: false,
+  offerings: false,
+  bookingRequests: false,
+});
+
+const noErrors = (): Errors => ({
+  jobs: null,
+  applications: null,
+  chats: null,
+  messages: null,
+  offerings: null,
+  bookingRequests: null,
+});
 
 interface StoreShape {
+  /** The public job board. */
   jobs: Job[];
+  /** Jobs the signed-in user posted. */
+  myJobs: Job[];
+  /** Every job seen this session, including ones off the board. */
+  jobsById: Record<string, Job>;
+  /** Applications the signed-in user filed, each carrying its job. */
+  myApplications: JobApplication[];
+  /** Applications on a given job, loaded on demand by its customer. */
   applications: Record<string, JobApplication[]>;
   offerings: WorkerOffering[];
-  currentWorkerVerified: boolean;
+  myOfferings: WorkerOffering[];
   chats: Chat[];
   messagesByChat: Record<string, Message[]>;
+  unreadCounts: Record<string, number>;
   bookingRequests: BookingRequest[];
-  otpByJob: Record<string, string>;
-  addJob: (job: Omit<Job, 'moderationStatus' | 'customerId'>) => void;
-  setApplicationStatus: (jobId: string, appId: string, status: ApplicationStatus) => void;
-  addOffering: (offering: WorkerOffering) => void;
-  addApplication: (jobId: string, application: JobApplication) => void;
-  verifyCurrentWorker: () => void;
-  ensureChatForJob: (jobId: string) => Chat | null;
-  sendMessage: (chatId: string, senderId: string, text: string) => void;
-  markChatRead: (chatId: string, userId: string) => void;
-  requestOfferingBooking: (offeringId: string, customerId: string) => Chat | null;
-  confirmBooking: (bookingRequestId: string) => void;
-  declineBooking: (bookingRequestId: string) => void;
-  cancelBooking: (bookingRequestId: string) => void;
-  startJob: (jobId: string) => void;
-  markJobComplete: (jobId: string) => void;
-  confirmJobCompletion: (jobId: string, enteredOtp: string) => boolean;
-  raiseDispute: (jobId: string) => void;
-  cancelJob: (jobId: string) => void;
+  reviewsByJob: Record<string, Review[]>;
+  profile: WorkerSummary | null;
+  profileError: string | null;
+
+  loading: Flags;
+  errors: Errors;
+
+  refreshJobs: () => Promise<void>;
+  refreshOfferings: () => Promise<void>;
+  refreshChats: () => Promise<void>;
+  refreshBookingRequests: () => Promise<void>;
+  refreshMyApplications: () => Promise<void>;
+  refreshProfile: () => Promise<void>;
+  loadJob: (jobId: string) => Promise<void>;
+  loadApplicationsForJob: (jobId: string) => Promise<void>;
+  loadMessages: (chatId: string) => Promise<void>;
+  loadReviews: (jobId: string) => Promise<void>;
+
+  addJob: (input: api.NewJobInput) => Promise<ActionResult>;
+  addApplication: (jobId: string, quotedRate: number, note?: string) => Promise<ActionResult>;
+  addOffering: (input: api.NewOfferingInput) => Promise<ActionResult>;
+  acceptApplication: (jobId: string, applicationId: string) => Promise<ActionResult>;
+  startJob: (jobId: string) => Promise<ActionResult>;
+  markJobComplete: (jobId: string) => Promise<ActionResult>;
+  /** `matched` is false for a wrong code, which is not an error. */
+  confirmJobCompletion: (jobId: string, enteredOtp: string) => Promise<ActionResult & { matched: boolean }>;
+  raiseDispute: (jobId: string) => Promise<ActionResult>;
+  cancelJob: (jobId: string) => Promise<ActionResult>;
+  requestOfferingBooking: (offeringId: string) => Promise<ActionResult & { chatId: string | null }>;
+  confirmBooking: (bookingId: string) => Promise<ActionResult>;
+  declineBooking: (bookingId: string) => Promise<ActionResult>;
+  cancelBooking: (bookingId: string) => Promise<ActionResult>;
+  sendMessage: (chatId: string, text: string) => Promise<ActionResult>;
+  markChatRead: (chatId: string) => Promise<ActionResult>;
+  verifyCurrentWorker: () => Promise<ActionResult>;
+  submitReview: (
+    jobId: string,
+    revieweeId: string,
+    stars: number,
+    tags: string[],
+    reviewText: string
+  ) => Promise<ActionResult>;
+  /** Temporary development affordance; server-side it is customer-only. */
+  peekJobOtp: (jobId: string) => Promise<{ otp: string | null; error: string | null }>;
+
+  /** Applied to local state by the realtime subscriptions (Stage D). */
+  applyMessageChange: (message: Message) => void;
+  applyChatChange: (chat: Partial<Chat> & { id: string }) => void;
+  applyJobChange: (job: Job) => void;
 }
 
 const StoreContext = createContext<StoreShape | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const [jobs, setJobs] = useState<Job[]>(seedJobs);
-  const [applications, setApplications] = useState(applicationsByJob);
-  const [offerings, setOfferings] = useState<WorkerOffering[]>(seedOfferings);
-  const [currentWorkerVerified, setCurrentWorkerVerified] = useState(currentWorker.isVerified);
+  const { user } = useAuth();
+  const userId = user?.id ?? null;
+
+  const [jobs, setJobs] = useState<Job[]>([]);
+  const [myJobs, setMyJobs] = useState<Job[]>([]);
+  const [jobsById, setJobsById] = useState<Record<string, Job>>({});
+  const [myApplications, setMyApplications] = useState<JobApplication[]>([]);
+  const [applications, setApplications] = useState<Record<string, JobApplication[]>>({});
+  const [offerings, setOfferings] = useState<WorkerOffering[]>([]);
+  const [myOfferings, setMyOfferings] = useState<WorkerOffering[]>([]);
   const [chats, setChats] = useState<Chat[]>([]);
   const [messagesByChat, setMessagesByChat] = useState<Record<string, Message[]>>({});
+  const [unreadCounts, setUnreadCounts] = useState<Record<string, number>>({});
   const [bookingRequests, setBookingRequests] = useState<BookingRequest[]>([]);
-  const [otpByJob, setOtpByJob] = useState<Record<string, string>>({});
-  const autoRepliedChats = useRef<Set<string>>(new Set());
+  const [reviewsByJob, setReviewsByJob] = useState<Record<string, Review[]>>({});
+  const [profile, setProfile] = useState<WorkerSummary | null>(null);
+  const [profileError, setProfileError] = useState<string | null>(null);
+  const [loading, setLoading] = useState<Flags>(noFlags);
+  const [errors, setErrors] = useState<Errors>(noErrors);
 
-  function addJob(job: Omit<Job, 'moderationStatus' | 'customerId'>) {
-    // Jobs tagged 'Other' don't match a known category, so they're held
-    // for review before appearing in the feed — same idea as an offering's
-    // moderationStatus.
-    const moderationStatus: Job['moderationStatus'] = job.categoryTags.includes('Other')
-      ? 'pending_review'
-      : 'not_required';
-    setJobs((prev) => [{ ...job, customerId: currentCustomer.id, moderationStatus }, ...prev]);
-  }
+  // Guards every setState in an async callback: a sign-out (or unmount) can
+  // land while a fetch is still in flight, and writing then would resurrect
+  // the previous user's rows.
+  const alive = useRef(true);
+  useEffect(() => {
+    alive.current = true;
+    return () => {
+      alive.current = false;
+    };
+  }, []);
 
-  function setApplicationStatus(jobId: string, appId: string, status: ApplicationStatus) {
-    // Captured before the state update below runs, since setApplications
-    // is async — by the time it lands, `applications` here would still be
-    // stale for this same synchronous call.
-    const acceptedWorkerId = applications[jobId]?.find((a) => a.id === appId)?.worker.id;
+  const begin = useCallback((c: Collection) => {
+    setLoading((prev) => ({ ...prev, [c]: true }));
+    setErrors((prev) => ({ ...prev, [c]: null }));
+  }, []);
 
-    setApplications((prev) => {
-      const list = prev[jobId] ?? [];
-      const updated = list.map((a) => {
-        if (a.id === appId) return { ...a, status };
-        // accepting one application auto-rejects the rest, per schema rule
-        if (status === 'accepted' && a.status !== 'rejected') return { ...a, status: 'rejected' as ApplicationStatus };
-        return a;
-      });
-      return { ...prev, [jobId]: updated };
+  const end = useCallback((c: Collection, error: string | null) => {
+    if (!alive.current) return;
+    setLoading((prev) => ({ ...prev, [c]: false }));
+    setErrors((prev) => ({ ...prev, [c]: error }));
+  }, []);
+
+  const indexJobs = useCallback((list: Job[]) => {
+    setJobsById((prev) => {
+      const next = { ...prev };
+      for (const j of list) next[j.id] = j;
+      return next;
     });
-    if (status === 'accepted') {
-      setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'worker_selected' } : j)));
-      if (acceptedWorkerId) createChatIfMissing(jobId, acceptedWorkerId);
+  }, []);
+
+  // ── Reads ─────────────────────────────────────────────────────────────
+
+  const refreshJobs = useCallback(async () => {
+    if (!userId) return;
+    begin('jobs');
+    const [board, mine] = await Promise.all([api.fetchOpenJobs(), api.fetchMyJobs()]);
+    if (!alive.current) return;
+    if (board.data) {
+      setJobs(board.data);
+      indexJobs(board.data);
     }
-  }
+    if (mine.data) {
+      setMyJobs(mine.data);
+      indexJobs(mine.data);
+    }
+    end('jobs', board.error ?? mine.error);
+  }, [userId, begin, end, indexJobs]);
 
-  function createChatIfMissing(jobId: string, workerId: string): Chat {
-    const existing = chats.find((c) => c.jobId === jobId);
-    if (existing) return existing;
-    const now = new Date().toISOString();
-    const chat: Chat = {
-      id: `chat_${jobId}`,
-      jobId,
-      customerId: currentCustomer.id,
-      workerId,
-      createdAt: now,
-      lastMessageAt: now,
-    };
-    setChats((prev) => (prev.some((c) => c.jobId === jobId) ? prev : [...prev, chat]));
-    return chat;
-  }
-
-  function ensureChatForJob(jobId: string): Chat | null {
-    const existing = chats.find((c) => c.jobId === jobId);
-    if (existing) return existing;
-    const acceptedApplication = (applications[jobId] ?? []).find((a) => a.status === 'accepted');
-    if (!acceptedApplication) return null;
-    return createChatIfMissing(jobId, acceptedApplication.worker.id);
-  }
-
-  function sendMessage(chatId: string, senderId: string, text: string) {
-    const message: Message = {
-      id: `msg_${Date.now()}`,
-      chatId,
-      senderId,
-      text,
-      sentAt: new Date().toISOString(),
-      read: false,
-    };
-    setMessagesByChat((prev) => ({ ...prev, [chatId]: [...(prev[chatId] ?? []), message] }));
-    setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, lastMessageAt: message.sentAt } : c)));
-
-    // One canned auto-reply per chat, for demo purposes only.
-    if (autoRepliedChats.current.has(chatId)) return;
-    autoRepliedChats.current.add(chatId);
-    const chat = chats.find((c) => c.id === chatId);
-    if (!chat) return;
-    const otherId = senderId === chat.customerId ? chat.workerId : chat.customerId;
-    setTimeout(() => {
-      const reply: Message = {
-        id: `msg_${Date.now()}_auto`,
-        chatId,
-        senderId: otherId,
-        text: 'Sounds good, thanks for the update!',
-        sentAt: new Date().toISOString(),
-        read: false,
-      };
-      setMessagesByChat((prev) => ({ ...prev, [chatId]: [...(prev[chatId] ?? []), reply] }));
-      setChats((prev) => prev.map((c) => (c.id === chatId ? { ...c, lastMessageAt: reply.sentAt } : c)));
-    }, 2500);
-  }
-
-  function markChatRead(chatId: string, userId: string) {
-    setMessagesByChat((prev) => {
-      const list = prev[chatId];
-      if (!list) return prev;
-      return { ...prev, [chatId]: list.map((m) => (m.senderId !== userId ? { ...m, read: true } : m)) };
-    });
-  }
-
-  function requestOfferingBooking(offeringId: string, customerId: string): Chat | null {
-    const offering = offerings.find((o) => o.id === offeringId);
-    if (!offering) return null;
-
-    const now = new Date().toISOString();
-    const bookingRequest: BookingRequest = {
-      id: `book_${Date.now()}`,
-      offeringId,
-      customerId,
-      status: 'pending',
-      createdAt: now,
-    };
-    setBookingRequests((prev) => [bookingRequest, ...prev]);
-
-    const chat: Chat = {
-      id: `chat_${bookingRequest.id}`,
-      bookingRequestId: bookingRequest.id,
-      customerId,
-      workerId: offering.worker.id,
-      createdAt: now,
-      lastMessageAt: now,
-    };
-    setChats((prev) => [...prev, chat]);
-    return chat;
-  }
-
-  function confirmBooking(bookingRequestId: string) {
-    const bookingRequest = bookingRequests.find((b) => b.id === bookingRequestId);
-    if (!bookingRequest || bookingRequest.status !== 'pending') return;
-
-    setBookingRequests((prev) =>
-      prev.map((b) => (b.id === bookingRequestId ? { ...b, status: 'confirmed' } : b))
-    );
-
-    const offering = offerings.find((o) => o.id === bookingRequest.offeringId);
-    if (!offering) return;
-
-    const newJob: Job = {
-      id: `job_${Date.now()}`,
-      customerId: bookingRequest.customerId,
-      description: offering.description,
-      categoryTags: offering.categoryTags,
-      budgetMin: offering.rate,
-      budgetMax: offering.rate,
-      urgency: 'scheduled',
-      locationLabel: 'To be confirmed in chat',
-      status: 'worker_selected',
-      moderationStatus: 'not_required',
-      origin: 'worker_offered',
-      createdAt: new Date().toISOString(),
-      applicantCount: 0,
-    };
-    setJobs((prev) => [newJob, ...prev]);
-
-    // Backfill jobId onto the same chat rather than creating a new one, so
-    // JobDetailScreen's existing ensureChatForJob(job.id) lookup finds it
-    // immediately and the thread carries on uninterrupted.
-    setChats((prev) =>
-      prev.map((c) => (c.bookingRequestId === bookingRequestId ? { ...c, jobId: newJob.id } : c))
-    );
-  }
-
-  function declineBooking(bookingRequestId: string) {
-    setBookingRequests((prev) =>
-      prev.map((b) => (b.id === bookingRequestId ? { ...b, status: 'declined' } : b))
-    );
-  }
-
-  function cancelBooking(bookingRequestId: string) {
-    setBookingRequests((prev) =>
-      prev.map((b) => (b.id === bookingRequestId ? { ...b, status: 'cancelled' } : b))
-    );
-  }
-
-  function startJob(jobId: string) {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === jobId && j.status === 'worker_selected' ? { ...j, status: 'in_progress' } : j))
-    );
-  }
-
-  function markJobComplete(jobId: string) {
-    // A real build would text this OTP to the customer and auto-confirm
-    // the job 6-12hrs after this call if the customer never enters it —
-    // skipped here since there's no real timer or SMS to back it, and a
-    // separate "force confirm" button would just be a second, redundant
-    // way to reach the same state the customer's OTP flow already reaches.
-    const otp = String(Math.floor(100000 + Math.random() * 900000));
-    setOtpByJob((prev) => ({ ...prev, [jobId]: otp }));
-    setJobs((prev) =>
-      prev.map((j) => (j.id === jobId && j.status === 'in_progress' ? { ...j, status: 'awaiting_confirmation' } : j))
-    );
-  }
-
-  function confirmJobCompletion(jobId: string, enteredOtp: string): boolean {
-    const job = jobs.find((j) => j.id === jobId);
-    if (!job || job.status !== 'awaiting_confirmation') return false;
-
-    // Job carries no customerId of its own (see mockData's "all posted
-    // jobs belong to the current customer" note) — its chat is the one
-    // place that records who the posting customer actually is.
-    const chat = chats.find((c) => c.jobId === jobId);
-    if (!chat || chat.customerId !== currentCustomer.id) return false;
-
-    const expectedOtp = otpByJob[jobId];
-    if (!expectedOtp || expectedOtp !== enteredOtp) return false;
-
-    setJobs((prev) => prev.map((j) => (j.id === jobId ? { ...j, status: 'confirmed_completed' } : j)));
-    return true;
-  }
-
-  function raiseDispute(jobId: string) {
-    setJobs((prev) =>
-      prev.map((j) => (j.id === jobId && j.status === 'awaiting_confirmation' ? { ...j, status: 'disputed' } : j))
-    );
-  }
-
-  function cancelJob(jobId: string) {
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === jobId && (j.status === 'open' || j.status === 'applications_received' || j.status === 'worker_selected')
-          ? { ...j, status: 'cancelled' }
-          : j
-      )
-    );
-  }
-
-  function addOffering(offering: WorkerOffering) {
-    setOfferings((prev) => [offering, ...prev]);
-  }
-
-  function verifyCurrentWorker() {
-    setCurrentWorkerVerified(true);
-  }
-
-  function addApplication(jobId: string, application: JobApplication) {
-    setApplications((prev) => ({ ...prev, [jobId]: [...(prev[jobId] ?? []), application] }));
-    setJobs((prev) =>
-      prev.map((j) =>
-        j.id === jobId
-          ? { ...j, applicantCount: j.applicantCount + 1, status: 'applications_received' }
-          : j
-      )
-    );
-  }
-
-  return (
-    <StoreContext.Provider
-      value={{
-        jobs,
-        applications,
-        offerings,
-        currentWorkerVerified,
-        chats,
-        messagesByChat,
-        bookingRequests,
-        otpByJob,
-        addJob,
-        setApplicationStatus,
-        addOffering,
-        addApplication,
-        verifyCurrentWorker,
-        ensureChatForJob,
-        sendMessage,
-        markChatRead,
-        requestOfferingBooking,
-        confirmBooking,
-        declineBooking,
-        cancelBooking,
-        startJob,
-        markJobComplete,
-        confirmJobCompletion,
-        raiseDispute,
-        cancelJob,
-      }}
-    >
-      {children}
-    </StoreContext.Provider>
+  const loadJob = useCallback(
+    async (jobId: string) => {
+      if (!userId) return;
+      begin('jobs');
+      const res = await api.fetchJobById(jobId);
+      if (!alive.current) return;
+      if (res.data) indexJobs([res.data]);
+      end('jobs', res.error);
+    },
+    [userId, begin, end, indexJobs]
   );
+
+  const refreshMyApplications = useCallback(async () => {
+    if (!userId) return;
+    begin('applications');
+    const res = await api.fetchMyApplications();
+    if (!alive.current) return;
+    if (res.data) {
+      setMyApplications(res.data);
+      indexJobs(res.data.map((a) => a.job).filter((j): j is Job => Boolean(j)));
+    }
+    end('applications', res.error);
+  }, [userId, begin, end, indexJobs]);
+
+  const loadApplicationsForJob = useCallback(
+    async (jobId: string) => {
+      if (!userId) return;
+      begin('applications');
+      const res = await api.fetchApplicationsForJob(jobId);
+      if (!alive.current) return;
+      if (res.data) setApplications((prev) => ({ ...prev, [jobId]: res.data as JobApplication[] }));
+      end('applications', res.error);
+    },
+    [userId, begin, end]
+  );
+
+  const refreshOfferings = useCallback(async () => {
+    if (!userId) return;
+    begin('offerings');
+    const [all, mine] = await Promise.all([api.fetchOfferings(), api.fetchMyOfferings()]);
+    if (!alive.current) return;
+    if (all.data) setOfferings(all.data);
+    if (mine.data) setMyOfferings(mine.data);
+    end('offerings', all.error ?? mine.error);
+  }, [userId, begin, end]);
+
+  const refreshChats = useCallback(async () => {
+    if (!userId) return;
+    begin('chats');
+    const [list, unread] = await Promise.all([api.fetchMyChats(), api.fetchUnreadCounts()]);
+    if (!alive.current) return;
+    if (list.data) setChats(list.data);
+    if (unread.data) setUnreadCounts(unread.data);
+    end('chats', list.error ?? unread.error);
+  }, [userId, begin, end]);
+
+  const loadMessages = useCallback(
+    async (chatId: string) => {
+      if (!userId) return;
+      begin('messages');
+      const res = await api.fetchMessages(chatId);
+      if (!alive.current) return;
+      if (res.data) setMessagesByChat((prev) => ({ ...prev, [chatId]: res.data as Message[] }));
+      end('messages', res.error);
+    },
+    [userId, begin, end]
+  );
+
+  const refreshBookingRequests = useCallback(async () => {
+    if (!userId) return;
+    begin('bookingRequests');
+    const res = await api.fetchMyBookingRequests();
+    if (!alive.current) return;
+    if (res.data) setBookingRequests(res.data);
+    end('bookingRequests', res.error);
+  }, [userId, begin, end]);
+
+  const loadReviews = useCallback(
+    async (jobId: string) => {
+      if (!userId) return;
+      const res = await api.fetchReviewsForJob(jobId);
+      if (!alive.current || !res.data) return;
+      setReviewsByJob((prev) => ({ ...prev, [jobId]: res.data as Review[] }));
+    },
+    [userId]
+  );
+
+  const refreshProfile = useCallback(async () => {
+    if (!userId) return;
+    const res = await api.fetchMyProfile();
+    if (!alive.current) return;
+    setProfile(res.data);
+    setProfileError(res.error);
+  }, [userId]);
+
+  // Initial load, and a full reset when the user changes or signs out.
+  useEffect(() => {
+    if (!userId) {
+      setJobs([]);
+      setMyJobs([]);
+      setJobsById({});
+      setMyApplications([]);
+      setApplications({});
+      setOfferings([]);
+      setMyOfferings([]);
+      setChats([]);
+      setMessagesByChat({});
+      setUnreadCounts({});
+      setBookingRequests([]);
+      setReviewsByJob({});
+      setProfile(null);
+      setProfileError(null);
+      setLoading(noFlags());
+      setErrors(noErrors());
+      return;
+    }
+    void refreshProfile();
+    void refreshJobs();
+    void refreshMyApplications();
+    void refreshOfferings();
+    void refreshChats();
+    void refreshBookingRequests();
+  }, [userId, refreshProfile, refreshJobs, refreshMyApplications, refreshOfferings, refreshChats, refreshBookingRequests]);
+
+  // ── Mutations ─────────────────────────────────────────────────────────
+
+  const addJob = useCallback(
+    async (input: api.NewJobInput) => {
+      const res = await api.createJob(input);
+      if (res.error) return failed(res.error);
+      await refreshJobs();
+      return succeeded;
+    },
+    [refreshJobs]
+  );
+
+  const addApplication = useCallback(
+    async (jobId: string, quotedRate: number, note?: string) => {
+      const res = await api.createApplication(jobId, quotedRate, note);
+      if (res.error) return failed(res.error);
+      await Promise.all([refreshMyApplications(), loadJob(jobId)]);
+      return succeeded;
+    },
+    [refreshMyApplications, loadJob]
+  );
+
+  const addOffering = useCallback(
+    async (input: api.NewOfferingInput) => {
+      const res = await api.createOffering(input);
+      if (res.error) return failed(res.error);
+      await refreshOfferings();
+      return succeeded;
+    },
+    [refreshOfferings]
+  );
+
+  const acceptApplication = useCallback(
+    async (jobId: string, applicationId: string) => {
+      const res = await api.acceptApplication(jobId, applicationId);
+      if (res.error) return failed(res.error);
+      // Accepting rejects the other applications and opens the chat, both
+      // server-side, so the applications list and the chat list both move.
+      await Promise.all([loadApplicationsForJob(jobId), loadJob(jobId), refreshChats()]);
+      return succeeded;
+    },
+    [loadApplicationsForJob, loadJob, refreshChats]
+  );
+
+  const runJobRpc = useCallback(
+    async (jobId: string, call: () => Promise<api.Result<null>>) => {
+      const res = await call();
+      if (res.error) return failed(res.error);
+      await Promise.all([loadJob(jobId), refreshJobs()]);
+      return succeeded;
+    },
+    [loadJob, refreshJobs]
+  );
+
+  const startJob = useCallback(
+    (jobId: string) => runJobRpc(jobId, () => api.startJob(jobId)),
+    [runJobRpc]
+  );
+
+  const markJobComplete = useCallback(
+    (jobId: string) => runJobRpc(jobId, () => api.markJobComplete(jobId)),
+    [runJobRpc]
+  );
+
+  const raiseDispute = useCallback(
+    (jobId: string) => runJobRpc(jobId, () => api.raiseDispute(jobId)),
+    [runJobRpc]
+  );
+
+  const cancelJob = useCallback(
+    (jobId: string) => runJobRpc(jobId, () => api.cancelJob(jobId)),
+    [runJobRpc]
+  );
+
+  const confirmJobCompletion = useCallback(
+    async (jobId: string, enteredOtp: string) => {
+      const res = await api.confirmJobCompletion(jobId, enteredOtp);
+      if (res.error) return { ...failed(res.error), matched: false };
+      const matched = res.data === true;
+      if (matched) await Promise.all([loadJob(jobId), refreshJobs()]);
+      return { ...succeeded, matched };
+    },
+    [loadJob, refreshJobs]
+  );
+
+  const requestOfferingBooking = useCallback(
+    async (offeringId: string) => {
+      const res = await api.requestOfferingBooking(offeringId);
+      if (res.error || !res.data) return { ...failed(res.error ?? 'Could not open the booking chat.'), chatId: null };
+      await Promise.all([refreshChats(), refreshBookingRequests()]);
+      return { ...succeeded, chatId: res.data };
+    },
+    [refreshChats, refreshBookingRequests]
+  );
+
+  const confirmBooking = useCallback(
+    async (bookingId: string) => {
+      const res = await api.confirmBooking(bookingId);
+      if (res.error) return failed(res.error);
+      // Spawns a job and backfills it onto the existing chat.
+      await Promise.all([refreshBookingRequests(), refreshChats(), refreshJobs()]);
+      return succeeded;
+    },
+    [refreshBookingRequests, refreshChats, refreshJobs]
+  );
+
+  const declineBooking = useCallback(
+    async (bookingId: string) => {
+      const res = await api.declineBooking(bookingId);
+      if (res.error) return failed(res.error);
+      await Promise.all([refreshBookingRequests(), refreshChats()]);
+      return succeeded;
+    },
+    [refreshBookingRequests, refreshChats]
+  );
+
+  const cancelBooking = useCallback(
+    async (bookingId: string) => {
+      const res = await api.cancelBooking(bookingId);
+      if (res.error) return failed(res.error);
+      await Promise.all([refreshBookingRequests(), refreshChats()]);
+      return succeeded;
+    },
+    [refreshBookingRequests, refreshChats]
+  );
+
+  const sendMessage = useCallback(
+    async (chatId: string, text: string) => {
+      const res = await api.sendMessage(chatId, text);
+      if (res.error) return failed(res.error);
+      await loadMessages(chatId);
+      return succeeded;
+    },
+    [loadMessages]
+  );
+
+  const markChatRead = useCallback(
+    async (chatId: string) => {
+      const res = await api.markChatRead(chatId);
+      if (res.error) return failed(res.error);
+      if (alive.current) setUnreadCounts((prev) => ({ ...prev, [chatId]: 0 }));
+      return succeeded;
+    },
+    []
+  );
+
+  const verifyCurrentWorker = useCallback(async () => {
+    const res = await api.verifySelf();
+    if (res.error) return failed(res.error);
+    await refreshProfile();
+    return succeeded;
+  }, [refreshProfile]);
+
+  const submitReview = useCallback(
+    async (jobId: string, revieweeId: string, stars: number, tags: string[], reviewText: string) => {
+      const res = await api.submitReview(jobId, revieweeId, stars, tags, reviewText);
+      if (res.error) return failed(res.error);
+      await loadReviews(jobId);
+      return succeeded;
+    },
+    [loadReviews]
+  );
+
+  const peekJobOtp = useCallback(async (jobId: string) => {
+    const res = await api.devPeekJobOtp(jobId);
+    return { otp: res.data ?? null, error: res.error };
+  }, []);
+
+  // ── Realtime appliers (Stage D) ───────────────────────────────────────
+
+  const applyMessageChange = useCallback((incoming: Message) => {
+    setMessagesByChat((prev) => {
+      const list = prev[incoming.chatId];
+      // Only patch threads already open; an unopened one is fetched whole
+      // when the user navigates in, so there is nothing to merge into.
+      if (!list) return prev;
+      const at = list.findIndex((m) => m.id === incoming.id);
+      if (at === -1) return { ...prev, [incoming.chatId]: [...list, incoming] };
+      const next = list.slice();
+      next[at] = incoming;
+      return { ...prev, [incoming.chatId]: next };
+    });
+  }, []);
+
+  const applyChatChange = useCallback((incoming: Partial<Chat> & { id: string }) => {
+    setChats((prev) => {
+      const at = prev.findIndex((c) => c.id === incoming.id);
+      // A brand-new chat arrives without its embedded profiles, so leave it
+      // to refreshChats rather than rendering a nameless row.
+      if (at === -1) return prev;
+      const next = prev.slice();
+      next[at] = { ...next[at], ...incoming };
+      return next;
+    });
+  }, []);
+
+  const applyJobChange = useCallback((incoming: Job) => {
+    setJobsById((prev) => ({ ...prev, [incoming.id]: incoming }));
+    setJobs((prev) => prev.map((j) => (j.id === incoming.id ? incoming : j)));
+    setMyJobs((prev) => prev.map((j) => (j.id === incoming.id ? incoming : j)));
+  }, []);
+
+  const value = useMemo<StoreShape>(
+    () => ({
+      jobs,
+      myJobs,
+      jobsById,
+      myApplications,
+      applications,
+      offerings,
+      myOfferings,
+      chats,
+      messagesByChat,
+      unreadCounts,
+      bookingRequests,
+      reviewsByJob,
+      profile,
+      profileError,
+      loading,
+      errors,
+      refreshJobs,
+      refreshOfferings,
+      refreshChats,
+      refreshBookingRequests,
+      refreshMyApplications,
+      refreshProfile,
+      loadJob,
+      loadApplicationsForJob,
+      loadMessages,
+      loadReviews,
+      addJob,
+      addApplication,
+      addOffering,
+      acceptApplication,
+      startJob,
+      markJobComplete,
+      confirmJobCompletion,
+      raiseDispute,
+      cancelJob,
+      requestOfferingBooking,
+      confirmBooking,
+      declineBooking,
+      cancelBooking,
+      sendMessage,
+      markChatRead,
+      verifyCurrentWorker,
+      submitReview,
+      peekJobOtp,
+      applyMessageChange,
+      applyChatChange,
+      applyJobChange,
+    }),
+    [
+      jobs,
+      myJobs,
+      jobsById,
+      myApplications,
+      applications,
+      offerings,
+      myOfferings,
+      chats,
+      messagesByChat,
+      unreadCounts,
+      bookingRequests,
+      reviewsByJob,
+      profile,
+      profileError,
+      loading,
+      errors,
+      refreshJobs,
+      refreshOfferings,
+      refreshChats,
+      refreshBookingRequests,
+      refreshMyApplications,
+      refreshProfile,
+      loadJob,
+      loadApplicationsForJob,
+      loadMessages,
+      loadReviews,
+      addJob,
+      addApplication,
+      addOffering,
+      acceptApplication,
+      startJob,
+      markJobComplete,
+      confirmJobCompletion,
+      raiseDispute,
+      cancelJob,
+      requestOfferingBooking,
+      confirmBooking,
+      declineBooking,
+      cancelBooking,
+      sendMessage,
+      markChatRead,
+      verifyCurrentWorker,
+      submitReview,
+      peekJobOtp,
+      applyMessageChange,
+      applyChatChange,
+      applyJobChange,
+    ]
+  );
+
+  return <StoreContext.Provider value={value}>{children}</StoreContext.Provider>;
 }
 
 export function useStore() {
@@ -324,3 +629,5 @@ export function useStore() {
   if (!ctx) throw new Error('useStore must be used within StoreProvider');
   return ctx;
 }
+
+export { COLLECTIONS };

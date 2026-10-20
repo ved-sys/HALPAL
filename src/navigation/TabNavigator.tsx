@@ -9,8 +9,6 @@ import { MyActivityScreen } from '@/screens/MyActivityScreen';
 import { MessagesScreen } from '@/screens/MessagesScreen';
 import { ProfileScreen } from '@/screens/ProfileScreen';
 import { useStore } from '@/state/store';
-import { useAppMode } from '@/state/AppMode';
-import { currentCustomer, currentWorker } from '@/data/mockData';
 
 export type TabParamList = {
   Feed: undefined;
@@ -31,22 +29,10 @@ const icons: Record<keyof TabParamList, keyof typeof Ionicons.glyphMap> = {
 };
 
 export function TabNavigator() {
-  const { chats, messagesByChat, bookingRequests } = useStore();
-  const { mode } = useAppMode();
-  const currentUserId = mode === 'worker' ? currentWorker.id : currentCustomer.id;
-  // Mirrors MessagesScreen's visibility rule (see comment there): a pending
-  // booking's chat is reachable from worker mode regardless of workerId,
-  // since every seeded offering belongs to an NPC worker.
-  const visibleChats = chats.filter((c) => {
-    if (mode === 'customer') return c.customerId === currentUserId;
-    if (c.workerId === currentUserId) return true;
-    const pendingBooking =
-      c.bookingRequestId && bookingRequests.find((b) => b.id === c.bookingRequestId && b.status === 'pending');
-    return Boolean(pendingBooking);
-  });
-  const hasUnreadMessages = visibleChats.some((c) =>
-    (messagesByChat[c.id] ?? []).some((m) => m.senderId !== currentUserId && !m.read)
-  );
+  // Unread counts come from the server, scoped by RLS to the chats this
+  // user is in, so the dot needs no client-side participant filtering.
+  const { unreadCounts } = useStore();
+  const hasUnreadMessages = Object.values(unreadCounts).some((n) => n > 0);
 
   return (
     <Tab.Navigator
@@ -67,7 +53,7 @@ export function TabNavigator() {
       <Tab.Screen name="Offerings" component={OfferingsScreen as any} />
       <Tab.Screen name="MyActivity" component={MyActivityScreen} options={{ title: 'My Activity' }} />
       <Tab.Screen name="Messages" component={MessagesScreen as any} />
-      <Tab.Screen name="Profile" component={ProfileScreen} />
+      <Tab.Screen name="Profile" component={ProfileScreen as any} />
     </Tab.Navigator>
   );
 }
