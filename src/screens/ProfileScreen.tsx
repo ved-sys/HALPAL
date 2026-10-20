@@ -3,14 +3,16 @@ import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { Avatar } from '@/components/WorkerCards';
-import { RatingLine } from '@/components/atoms';
+import { PrimaryButton, RatingLine } from '@/components/atoms';
 import { currentWorker } from '@/data/mockData';
 import { useAppMode } from '@/state/AppMode';
+import { useAuth } from '@/state/AuthContext';
 import { useStore } from '@/state/store';
 
 export function ProfileScreen() {
   const { mode, setMode } = useAppMode();
   const { currentWorkerVerified, verifyCurrentWorker } = useStore();
+  const { signOut } = useAuth();
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -67,6 +69,10 @@ export function ProfileScreen() {
               </View>
             ))}
           </View>
+        </View>
+
+        <View style={styles.section}>
+          <PrimaryButton label="Sign out" variant="outline" onPress={signOut} />
         </View>
       </ScrollView>
     </SafeAreaView>

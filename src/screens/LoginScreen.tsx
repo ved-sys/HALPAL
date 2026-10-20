@@ -3,11 +3,9 @@ import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, fonts, radius, spacing, type } from '@/theme/tokens';
 import { Blob, PrimaryButton } from '@/components/atoms';
-import { useAppMode } from '@/state/AppMode';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 import { supabase } from '@/lib/supabase';
-import { currentCustomer, currentWorker } from '@/data/mockData';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Login'>;
 
@@ -19,8 +17,7 @@ type Step = 'phone' | 'code';
 // verifyOtp confirms it and starts the session. AppMode defaults to
 // 'customer' on first login; ProfileScreen's existing toggle still
 // handles switching to worker mode afterward.
-export function LoginScreen({ navigation }: Props) {
-  const { setMode } = useAppMode();
+export function LoginScreen(_props: Props) {
   const [step, setStep] = useState<Step>('phone');
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
@@ -29,9 +26,8 @@ export function LoginScreen({ navigation }: Props) {
   const [error, setError] = useState<string | null>(null);
 
   const digits = phone.replace(/\D/g, '');
-  // Supabase's configured test numbers use E.164-without-plus (e.g.
-  // 919999999999), so prepend '91' rather than '+91'.
-  const e164Phone = `91${digits}`;
+  // Full E.164, including the '+' — what the SMS provider expects.
+  const e164Phone = `+91${digits}`;
 
   async function handleSendCode() {
     setError(null);
@@ -57,7 +53,7 @@ export function LoginScreen({ navigation }: Props) {
       return;
     }
     setVerifying(true);
-    const { data, error: verifyError } = await supabase.auth.verifyOtp({
+    const { error: verifyError } = await supabase.auth.verifyOtp({
       phone: e164Phone,
       token,
       type: 'sms',
@@ -67,14 +63,8 @@ export function LoginScreen({ navigation }: Props) {
       setError(verifyError.message);
       return;
     }
-
-    const userId = data.session?.user.id ?? data.user?.id;
-    if (userId) {
-      currentCustomer.id = userId;
-      currentWorker.id = userId;
-    }
-    setMode('customer');
-    navigation.replace('Tabs');
+    // No navigation here: RootNavigator swaps Login for Tabs when the
+    // session lands via onAuthStateChange.
   }
 
   function handleUseDifferentNumber() {
