@@ -2,6 +2,7 @@
   "expo": {
     "name": "Halpal",
     "slug": "halpal",
+    "scheme": "halpal",
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
@@ -9,8 +10,13 @@
       "backgroundColor": "#F1ECE0"
     },
     "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "bundleIdentifier": "com.halpal.app",
+      "buildNumber": "1"
+    },
     "android": {
       "package": "com.halpal.app",
+      "versionCode": 1,
       "adaptiveIcon": {
         "backgroundColor": "#F1ECE0"
       }
