@@ -53,7 +53,7 @@ export function TabNavigator() {
       <Tab.Screen name="Offerings" component={OfferingsScreen as any} />
       <Tab.Screen name="MyActivity" component={MyActivityScreen} options={{ title: 'My Activity' }} />
       <Tab.Screen name="Messages" component={MessagesScreen as any} />
-      <Tab.Screen name="Profile" component={ProfileScreen as any} />
+      <Tab.Screen name="Profile" component={ProfileScreen} />
     </Tab.Navigator>
   );
 }

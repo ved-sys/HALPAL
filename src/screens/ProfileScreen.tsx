@@ -7,10 +7,20 @@ import { ErrorNote, PrimaryButton, RatingLine } from '@/components/atoms';
 import { useAppMode } from '@/state/AppMode';
 import { useAuth } from '@/state/AuthContext';
 import { useStore } from '@/state/store';
+import { CompositeScreenProps } from '@react-navigation/native';
+import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
+import { NativeStackScreenProps } from '@react-navigation/native-stack';
+import { RootStackParamList } from '@/navigation/RootNavigator';
+import type { TabParamList } from '@/navigation/TabNavigator';
 
-export function ProfileScreen() {
+type Props = CompositeScreenProps<
+  BottomTabScreenProps<TabParamList, 'Profile'>,
+  NativeStackScreenProps<RootStackParamList, 'Tabs'>
+>;
+
+export function ProfileScreen({ navigation }: Props) {
   const { mode, setMode } = useAppMode();
-  const { profile, profileError, verifyCurrentWorker } = useStore();
+  const { profile, profileError, verifyCurrentWorker, myOfferings } = useStore();
   const { signOut } = useAuth();
   const [verifying, setVerifying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -92,6 +102,36 @@ export function ProfileScreen() {
           <ErrorNote message={actionError} />
         </View>
 
+        {mode === 'worker' && (
+          <View style={styles.section}>
+            <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>
+              YOUR OFFERINGS
+            </Text>
+            <Text style={[type.small, { color: colors.inkSoft, marginBottom: spacing.sm }]}>
+              {myOfferings.length === 0
+                ? "You haven't listed a service yet."
+                : `${myOfferings.length} listed.`}
+            </Text>
+            {myOfferings.map((o) => (
+              <View key={o.id} style={styles.offeringRow}>
+                <Text style={[type.bodyStrong, { color: colors.ink }]} numberOfLines={1}>
+                  {o.title}
+                </Text>
+                <Text style={[type.small, { color: colors.inkFaint }]}>
+                  ₹{o.rate}/session ·{' '}
+                  {o.moderationStatus === 'pending_review' ? 'In review' : o.status === 'active' ? 'Live' : 'Inactive'}
+                </Text>
+              </View>
+            ))}
+            <PrimaryButton
+              label="List a service"
+              variant="outline"
+              onPress={() => navigation.navigate('CreateOffering')}
+              style={{ marginTop: spacing.sm }}
+            />
+          </View>
+        )}
+
         <View style={styles.section}>
           <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>SKILLS</Text>
           {profile.skills.length === 0 ? (
@@ -154,6 +194,14 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.xs,
     borderRadius: radius.pill,
     backgroundColor: colors.primarySoft,
+  },
+  offeringRow: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
   },
   skillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm },
   skillChip: {

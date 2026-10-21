@@ -27,6 +27,8 @@ const CHAT_ELIGIBLE_STATUSES: JobStatus[] = [
   'cancelled',
 ];
 const APPLICABLE_STATUSES: JobStatus[] = ['open', 'applications_received'];
+// Past worker_selected the job is under way, and cancel_job rejects it.
+const CANCELLABLE_STATUSES: JobStatus[] = ['open', 'applications_received', 'worker_selected'];
 
 export function JobDetailScreen({ route, navigation }: Props) {
   const { jobId } = route.params;
@@ -46,6 +48,10 @@ export function JobDetailScreen({ route, navigation }: Props) {
     markJobComplete,
     confirmJobCompletion,
     raiseDispute,
+    cancelJob,
+    submitReview,
+    loadReviews,
+    reviewsByJob,
     peekJobOtp,
   } = useStore();
   const { user } = useAuth();
@@ -62,7 +68,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const [stars, setStars] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
   const [reviewText, setReviewText] = useState('');
-  const [reviewSubmitted, setReviewSubmitted] = useState(false);
+  const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [peekedOtp, setPeekedOtp] = useState<string | null>(null);
@@ -76,6 +82,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
   useEffect(() => {
     if (mode === 'customer') void loadApplicationsForJob(jobId);
   }, [jobId, mode, loadApplicationsForJob]);
+
+  // The review each side left is the thing to show after submitting, so
+  // it has to be read back rather than assumed from local state.
+  useEffect(() => {
+    if (job?.status === 'confirmed_completed') void loadReviews(jobId);
+  }, [jobId, job?.status, loadReviews]);
 
   // Seed the quote with the job's floor once the job itself has loaded.
   useEffect(() => {
@@ -99,6 +111,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   // The job row carries no worker, so the counterparty comes from the chat
   // that accepting the application opened.
   const revieweeId = mode === 'customer' ? chat?.workerId : job.customerId;
+  const myReview = (reviewsByJob[jobId] ?? []).find((r) => r.reviewerId === user?.id);
 
   function toggleTag(tag: string) {
     setSelectedTags((prev) => (prev.includes(tag) ? prev.filter((t) => t !== tag) : [...prev, tag]));
@@ -135,6 +148,14 @@ export function JobDetailScreen({ route, navigation }: Props) {
       return;
     }
     setPeekedOtp(res.otp ?? 'unavailable');
+  }
+
+  async function handleSubmitReview() {
+    if (!revieweeId) {
+      setActionError('Cannot tell who to review until the chat for this job exists.');
+      return;
+    }
+    await run('review', () => submitReview(jobId, revieweeId, stars, selectedTags, reviewText.trim()));
   }
 
   async function submitApplication() {
@@ -286,9 +307,29 @@ export function JobDetailScreen({ route, navigation }: Props) {
         {job.status === 'confirmed_completed' && (
           <View style={styles.section}>
             <Text style={[type.h2, { color: colors.ink }]}>Leave a review</Text>
-            {reviewSubmitted ? (
-              <View style={styles.infoBox}>
-                <Text style={[type.body, { color: colors.teal }]}>Thanks for your review!</Text>
+            {myReview ? (
+              <View style={styles.reviewCard}>
+                <Text style={[type.display, { color: colors.primary }]}>
+                  {'★'.repeat(myReview.stars)}
+                  <Text style={{ color: colors.border }}>{'★'.repeat(5 - myReview.stars)}</Text>
+                </Text>
+                {myReview.tags.length > 0 && (
+                  <View style={styles.pillRow}>
+                    {myReview.tags.map((tag) => (
+                      <View key={tag} style={[styles.tagPill, styles.tagPillActive]}>
+                        <Text style={[type.smallStrong, { color: colors.onPrimary }]}>{tag}</Text>
+                      </View>
+                    ))}
+                  </View>
+                )}
+                {myReview.reviewText ? (
+                  <Text style={[type.body, { color: colors.ink, marginTop: spacing.sm }]}>
+                    "{myReview.reviewText}"
+                  </Text>
+                ) : null}
+                <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.sm }]}>
+                  Your review, submitted {new Date(myReview.createdAt).toLocaleDateString()}.
+                </Text>
               </View>
             ) : (
               <View>
@@ -324,11 +365,16 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   style={[styles.input, { height: 70, textAlignVertical: 'top', marginTop: spacing.sm }]}
                 />
                 <PrimaryButton
-                  label="Submit review"
-                  onPress={() => setReviewSubmitted(true)}
-                  disabled={stars === 0 || !revieweeId}
+                  label={busy === 'review' ? 'Submitting…' : 'Submit review'}
+                  onPress={() => void handleSubmitReview()}
+                  disabled={stars === 0 || !revieweeId || busy !== null}
                   style={{ marginTop: spacing.md }}
                 />
+                {!revieweeId && (
+                  <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.xs }]}>
+                    Waiting on this job's chat to identify the other party.
+                  </Text>
+                )}
               </View>
             )}
           </View>
@@ -379,6 +425,37 @@ export function JobDetailScreen({ route, navigation }: Props) {
                   style={{ marginTop: spacing.lg }}
                 />
               </View>
+            )}
+          </View>
+        )}
+
+        {mode === 'customer' && CANCELLABLE_STATUSES.includes(job.status) && (
+          <View style={styles.section}>
+            {confirmingCancel ? (
+              <View style={styles.warningBox}>
+                <Text style={[type.bodyStrong, { color: colors.ink }]}>Cancel this job?</Text>
+                <Text style={[type.small, { color: colors.inkSoft, marginTop: spacing.xs }]}>
+                  Anyone who applied will see it was cancelled. This can't be undone.
+                </Text>
+                <View style={{ flexDirection: 'row', gap: spacing.sm, marginTop: spacing.md }}>
+                  <PrimaryButton
+                    label={busy === 'cancel' ? 'Cancelling…' : 'Yes, cancel'}
+                    variant="danger"
+                    disabled={busy !== null}
+                    onPress={() => void run('cancel', () => cancelJob(jobId))}
+                    style={{ flex: 1 }}
+                  />
+                  <PrimaryButton
+                    label="Keep it"
+                    variant="outline"
+                    disabled={busy !== null}
+                    onPress={() => setConfirmingCancel(false)}
+                    style={{ flex: 1 }}
+                  />
+                </View>
+              </View>
+            ) : (
+              <PrimaryButton label="Cancel job" variant="outline" onPress={() => setConfirmingCancel(true)} />
             )}
           </View>
         )}
@@ -478,6 +555,14 @@ const styles = StyleSheet.create({
     padding: spacing.md,
     borderRadius: radius.md,
     backgroundColor: colors.dangerSoft,
+  },
+  reviewCard: {
+    backgroundColor: colors.surfaceRaised,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.md,
+    marginTop: spacing.sm,
   },
   starRow: { flexDirection: 'row', gap: spacing.sm, marginTop: spacing.sm },
   pillRow: { flexDirection: 'row', flexWrap: 'wrap', gap: spacing.sm, marginTop: spacing.md },

@@ -9,6 +9,7 @@ import { JobDetailScreen } from '@/screens/JobDetailScreen';
 import { PostJobScreen } from '@/screens/PostJobScreen';
 import { ChatScreen } from '@/screens/ChatScreen';
 import { OfferingDetailScreen } from '@/screens/OfferingDetailScreen';
+import { CreateOfferingScreen } from '@/screens/CreateOfferingScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -17,6 +18,7 @@ export type RootStackParamList = {
   PostJob: undefined;
   Chat: { chatId: string };
   OfferingDetail: { offeringId: string };
+  CreateOffering: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -54,6 +56,11 @@ export function RootNavigator() {
             name="OfferingDetail"
             component={OfferingDetailScreen}
             options={{ title: 'Offering' }}
+          />
+          <Stack.Screen
+            name="CreateOffering"
+            component={CreateOfferingScreen}
+            options={{ title: 'List a service' }}
           />
           <Stack.Screen
             name="PostJob"
