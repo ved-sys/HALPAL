@@ -14,9 +14,13 @@ import { SettingsScreen } from '@/screens/SettingsScreen';
 import { PrivacyPolicyScreen, TermsScreen } from '@/screens/LegalScreens';
 import { DeleteAccountScreen } from '@/screens/DeleteAccountScreen';
 import { EditProfileScreen } from '@/screens/EditProfileScreen';
+import { NameSetupScreen } from '@/screens/NameSetupScreen';
+import { useStore } from '@/state/store';
+import { PLACEHOLDER_NAME } from '@/lib/profileRules';
 
 export type RootStackParamList = {
   Login: undefined;
+  NameSetup: undefined;
   Tabs: undefined;
   JobDetail: { jobId: string };
   PostJob: undefined;
@@ -34,8 +38,17 @@ const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
   const { session, loading } = useAuth();
+  const { profile, profileError } = useStore();
 
-  if (loading) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />;
+  // Hold a blank canvas until the profile row has answered, so a first-run
+  // user doesn't see the tabs flash before the name step. A failed fetch
+  // falls through to the tabs, where Profile shows the error.
+  const awaitingProfile = session != null && profile == null && profileError == null;
+  if (loading || awaitingProfile) return <View style={{ flex: 1, backgroundColor: colors.canvas }} />;
+
+  // Only the exact placeholder triggers the step: 'Deleted user' never does,
+  // and once a real name is saved the refreshed profile ends it.
+  const needsName = profile?.fullName === PLACEHOLDER_NAME;
 
   return (
     <Stack.Navigator
@@ -48,6 +61,8 @@ export function RootNavigator() {
     >
       {!session ? (
         <Stack.Screen name="Login" component={LoginScreen} options={{ headerShown: false }} />
+      ) : needsName ? (
+        <Stack.Screen name="NameSetup" component={NameSetupScreen} options={{ headerShown: false }} />
       ) : (
         <>
           <Stack.Screen name="Tabs" component={TabNavigator} options={{ headerShown: false }} />
