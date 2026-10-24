@@ -118,6 +118,8 @@ interface StoreShape {
   ) => Promise<ActionResult>;
   /** Temporary development affordance; server-side it is customer-only. */
   peekJobOtp: (jobId: string) => Promise<{ otp: string | null; error: string | null }>;
+  /** On success the session is cleared, which resets the store and returns the app to Login. */
+  deleteMyAccount: () => Promise<ActionResult>;
 
   /** Applied to local state by the realtime subscriptions (Stage D). */
   applyMessageChange: (message: Message) => void;
@@ -128,7 +130,7 @@ interface StoreShape {
 const StoreContext = createContext<StoreShape | null>(null);
 
 export function StoreProvider({ children }: { children: React.ReactNode }) {
-  const { user } = useAuth();
+  const { user, signOut } = useAuth();
   const userId = user?.id ?? null;
 
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -514,6 +516,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [loadReviews]
   );
 
+  const deleteMyAccount = useCallback(async () => {
+    const res = await api.deleteMyAccount();
+    if (res.error) return failed(res.error);
+    // The auth user is gone, so only the local session is left to clear.
+    // Clearing it drops userId to null, and the reset effect above wipes
+    // every cached collection.
+    await signOut({ scope: 'local' });
+    return succeeded;
+  }, [signOut]);
+
   const peekJobOtp = useCallback(async (jobId: string) => {
     const res = await api.devPeekJobOtp(jobId);
     return { otp: res.data ?? null, error: res.error };
@@ -633,6 +645,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       verifyCurrentWorker,
       submitReview,
       peekJobOtp,
+      deleteMyAccount,
       applyMessageChange,
       applyChatChange,
       applyJobChange,
@@ -684,6 +697,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       verifyCurrentWorker,
       submitReview,
       peekJobOtp,
+      deleteMyAccount,
       applyMessageChange,
       applyChatChange,
       applyJobChange,

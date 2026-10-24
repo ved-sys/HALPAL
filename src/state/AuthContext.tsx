@@ -6,7 +6,12 @@ interface AuthShape {
   session: Session | null;
   user: User | null;
   loading: boolean;
-  signOut: () => Promise<void>;
+  /**
+   * `local` skips the server round-trip and only clears this device's
+   * session. Use it when the auth user no longer exists (after account
+   * deletion), where a server sign-out could fail.
+   */
+  signOut: (opts?: { scope?: 'global' | 'local' }) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthShape | null>(null);
@@ -31,8 +36,8 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  async function signOut() {
-    await supabase.auth.signOut();
+  async function signOut(opts?: { scope?: 'global' | 'local' }) {
+    await supabase.auth.signOut(opts?.scope ? { scope: opts.scope } : undefined);
   }
 
   return (

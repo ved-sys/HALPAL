@@ -38,15 +38,18 @@ const PRIVACY_SECTIONS: Section[] = [
       'Open jobs are visible to anyone signed in to Halpal.',
       'Your name, rating, skills and offerings are visible to other users.',
       'A chat is visible only to its two participants, and to Halpal staff when a dispute is raised.',
-      'The app does not show your phone number to other users.',
+      'Your phone number is not shown to other users.',
       'We do not sell your data.',
     ],
   },
   {
-    heading: 'Deleting your data',
+    heading: 'Deleting your account',
     body: [
-      `You can ask us to delete your account and its data by emailing ${CONTACT_EMAIL}. In-app deletion is coming soon.`,
-      'Some records, such as completed jobs that are under dispute, may need to be kept for a limited time.',
+      'You can delete your account from Settings → Delete my account. You will need to finish, cancel or resolve any job that is under way, awaiting confirmation or disputed first.',
+      'When you delete your account, your sign-in is removed and your profile is replaced by "Deleted user".',
+      'Your open jobs, applications, offerings and pending bookings are cancelled.',
+      'Past job records, reviews and chat messages remain visible to the other party on each job.',
+      `If you can't use the app, you can also ask for deletion at ${CONTACT_EMAIL}.`,
     ],
   },
   {

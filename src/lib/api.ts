@@ -14,7 +14,7 @@
  *   cancel_job           request_offering_booking
  *   confirm_booking      decline_booking    cancel_booking
  *   submit_review        send_message       mark_chat_read
- *   verify_self          dev_peek_job_otp
+ *   verify_self          dev_peek_job_otp        delete_my_account
  *
  * Two consequences worth remembering:
  *  - Never pass a user id to an RPC. The function reads auth.uid() itself,
@@ -82,8 +82,10 @@ export interface ProfileRow {
   total_jobs_completed: number | null;
   skills: string[] | null;
   bio: string | null;
-  phone?: string | null;
+  avatar_url?: string | null;
   created_at?: string;
+  // No `phone`: other users' phone numbers are not readable, and the
+  // signed-in user's own number comes from the auth session (user.phone).
 }
 
 export interface JobRow {
@@ -315,7 +317,13 @@ export function rowToReview(r: ReviewRow): Review {
 // Select fragments. `chats` has two foreign keys into profiles, so the
 // embeds there must name the column (`profiles!customer_id`) or PostgREST
 // rejects the query as ambiguous (PGRST201).
-const PROFILE_COLS = 'id,full_name,avatar_color,is_verified,avg_rating,total_jobs_completed,skills,bio';
+//
+// Every read of profiles, direct or embedded, must use PROFILE_COLS and
+// never '*'. phone and deleted_at are not granted to clients, so a
+// wildcard fails with "permission denied". A deleted account shows up as
+// full_name 'Deleted user'.
+const PROFILE_COLS =
+  'id,full_name,avatar_color,avatar_url,is_verified,avg_rating,total_jobs_completed,skills,bio,created_at';
 const APPLICATION_SELECT = `*,worker:profiles(${PROFILE_COLS})`;
 const OFFERING_SELECT = `*,worker:profiles(${PROFILE_COLS})`;
 const CHAT_SELECT =
@@ -849,6 +857,16 @@ export function subscribeToChanges(handlers: RealtimeHandlers): () => void {
   return () => {
     void supabase.removeChannel(channel);
   };
+}
+
+/**
+ * Deletes the signed-in user's account server-side, including the auth
+ * user. The server refuses, with a message worth showing as-is, while the
+ * user has a job in worker_selected, in_progress, awaiting_confirmation or
+ * disputed.
+ */
+export function deleteMyAccount(): Promise<Result<null>> {
+  return callVoidRpc('delete_my_account', {});
 }
 
 /**
