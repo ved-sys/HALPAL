@@ -1,5 +1,5 @@
 import React from 'react';
-import { Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
 import { colors, fonts, radius, spacing, themeMeta, type } from '@/theme/tokens';
 
 export function Badge({
@@ -80,6 +80,32 @@ export function ErrorNote({ message, style }: { message?: string | null; style?:
   return (
     <View style={[styles.errorNote, style]}>
       <Text style={[type.small, { color: colors.danger }]}>{message}</Text>
+    </View>
+  );
+}
+
+/**
+ * The empty state every list screen shares. While loading it shows a
+ * spinner. After a failed fetch it shows nothing, since the ErrorNote above
+ * the list already explains, and "nothing here" would be a claim the app
+ * can't back up. Otherwise it shows the screen's own empty message.
+ */
+export function ListEmpty({
+  loading,
+  error,
+  message,
+}: {
+  loading: boolean;
+  error?: string | null;
+  message: string;
+}) {
+  return (
+    <View style={styles.listEmpty}>
+      {loading ? (
+        <ActivityIndicator color={colors.primary} />
+      ) : error ? null : (
+        <Text style={[type.body, { color: colors.inkFaint, textAlign: 'center' }]}>{message}</Text>
+      )}
     </View>
   );
 }
@@ -205,6 +231,7 @@ const styles = StyleSheet.create({
     borderColor: colors.borderStrong,
   },
   ratingRow: { flexDirection: 'row', alignItems: 'baseline', gap: 4 },
+  listEmpty: { padding: spacing.xxl, alignItems: 'center' },
   errorNote: {
     backgroundColor: colors.dangerSoft,
     borderRadius: radius.sm,

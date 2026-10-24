@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { JobCard } from '@/components/JobCard';
-import { ErrorNote } from '@/components/atoms';
+import { ErrorNote, ListEmpty } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
 import { JobCategory } from '@/types/models';
@@ -81,19 +81,11 @@ export function FeedScreen({ navigation }: Props) {
         data={openJobs}
         keyExtractor={(j) => j.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={loading.jobs} onRefresh={() => void refreshJobs()} />}
+        refreshControl={<RefreshControl refreshing={loading.jobs && jobs.length > 0} onRefresh={() => void refreshJobs()} />}
         renderItem={({ item }) => (
           <JobCard job={item} onPress={() => navigation.navigate('JobDetail', { jobId: item.id })} />
         )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            {loading.jobs ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Text style={[type.body, { color: colors.inkFaint }]}>No open jobs right now.</Text>
-            )}
-          </View>
-        }
+        ListEmptyComponent={<ListEmpty loading={loading.jobs} error={errors.jobs} message="No open jobs right now." />}
       />
     </SafeAreaView>
   );
@@ -117,7 +109,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow.card,
   },
-  empty: { padding: spacing.xxl, alignItems: 'center' },
   chipRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm },
   chip: {
     paddingHorizontal: spacing.md,

@@ -1,8 +1,8 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
-import { ErrorNote } from '@/components/atoms';
+import { ErrorNote, ListEmpty } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAuth } from '@/state/AuthContext';
 import { useAppMode } from '@/state/AppMode';
@@ -31,7 +31,7 @@ export function MessagesScreen({ navigation }: Props) {
         data={chats}
         keyExtractor={(c) => c.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-        refreshControl={<RefreshControl refreshing={loading.chats} onRefresh={() => void refreshChats()} />}
+        refreshControl={<RefreshControl refreshing={loading.chats && chats.length > 0} onRefresh={() => void refreshChats()} />}
         renderItem={({ item }) => {
           const other = currentUserId === item.customerId ? item.worker : item.customer;
           const subtitle = item.jobDescription ?? item.offeringTitle ?? 'Booking request';
@@ -63,17 +63,7 @@ export function MessagesScreen({ navigation }: Props) {
             </Pressable>
           );
         }}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            {loading.chats ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Text style={[type.body, { color: colors.inkFaint }]}>
-                No conversations yet — a chat opens once a worker is accepted for a job.
-              </Text>
-            )}
-          </View>
-        }
+        ListEmptyComponent={<ListEmpty loading={loading.chats} error={errors.chats} message="No conversations yet. A chat opens once a worker is accepted for a job, or when you request a booking." />}
       />
     </SafeAreaView>
   );
@@ -95,5 +85,4 @@ const styles = StyleSheet.create({
   },
   rowHeader: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
   unreadDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: colors.primary },
-  empty: { padding: spacing.xxl, alignItems: 'center' },
 });

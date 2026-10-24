@@ -1,9 +1,9 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, spacing, type } from '@/theme/tokens';
 import { OfferingCard } from '@/components/WorkerCards';
-import { ErrorNote } from '@/components/atoms';
+import { ErrorNote, ListEmpty } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
@@ -32,19 +32,11 @@ export function OfferingsScreen({ navigation }: Props) {
         data={offerings}
         keyExtractor={(o) => o.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl, paddingTop: spacing.sm }}
-        refreshControl={<RefreshControl refreshing={loading.offerings} onRefresh={() => void refreshOfferings()} />}
+        refreshControl={<RefreshControl refreshing={loading.offerings && offerings.length > 0} onRefresh={() => void refreshOfferings()} />}
         renderItem={({ item }) => (
           <OfferingCard offering={item} onPress={() => navigation.navigate('OfferingDetail', { offeringId: item.id })} />
         )}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            {loading.offerings ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Text style={[type.body, { color: colors.inkFaint }]}>No offerings listed yet.</Text>
-            )}
-          </View>
-        }
+        ListEmptyComponent={<ListEmpty loading={loading.offerings} error={errors.offerings} message="No offerings listed yet." />}
       />
     </SafeAreaView>
   );
@@ -53,5 +45,4 @@ export function OfferingsScreen({ navigation }: Props) {
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: colors.canvas },
   header: { paddingHorizontal: spacing.lg, paddingTop: spacing.sm },
-  empty: { padding: spacing.xxl, alignItems: 'center' },
 });

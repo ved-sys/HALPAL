@@ -1,10 +1,10 @@
 import React from 'react';
-import { ActivityIndicator, FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
+import { FlatList, Pressable, RefreshControl, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
-import { ErrorNote } from '@/components/atoms';
+import { ErrorNote, ListEmpty } from '@/components/atoms';
 import { JobStatus } from '@/types/models';
 import { CompositeScreenProps } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
@@ -41,18 +41,8 @@ export function MyActivityScreen({ navigation }: Props) {
           data={myJobs}
           keyExtractor={(j) => j.id}
           contentContainerStyle={{ paddingBottom: spacing.xxxl }}
-          refreshControl={<RefreshControl refreshing={loading.jobs} onRefresh={() => void refreshJobs()} />}
-          ListEmptyComponent={
-            <View style={styles.empty}>
-              {loading.jobs ? (
-                <ActivityIndicator color={colors.primary} />
-              ) : (
-                <Text style={[type.body, { color: colors.inkFaint }]}>
-                  You haven't posted a job yet.
-                </Text>
-              )}
-            </View>
-          }
+          refreshControl={<RefreshControl refreshing={loading.jobs && myJobs.length > 0} onRefresh={() => void refreshJobs()} />}
+          ListEmptyComponent={<ListEmpty loading={loading.jobs} error={errors.jobs} message="You haven't posted a job yet." />}
           renderItem={({ item }) => {
             const tone = statusTone[item.status];
             return (
@@ -89,7 +79,7 @@ export function MyActivityScreen({ navigation }: Props) {
         keyExtractor={(a) => a.id}
         contentContainerStyle={{ paddingBottom: spacing.xxxl }}
         refreshControl={
-          <RefreshControl refreshing={loading.applications} onRefresh={() => void refreshMyApplications()} />
+          <RefreshControl refreshing={loading.applications && myApplications.length > 0} onRefresh={() => void refreshMyApplications()} />
         }
         renderItem={({ item }) => {
           const job = item.job;
@@ -128,17 +118,7 @@ export function MyActivityScreen({ navigation }: Props) {
             </Pressable>
           );
         }}
-        ListEmptyComponent={
-          <View style={styles.empty}>
-            {loading.applications ? (
-              <ActivityIndicator color={colors.primary} />
-            ) : (
-              <Text style={[type.body, { color: colors.inkFaint }]}>
-                You haven't applied to anything yet — browse the feed to get started.
-              </Text>
-            )}
-          </View>
-        }
+        ListEmptyComponent={<ListEmpty loading={loading.applications} error={errors.applications} message="You haven't applied to anything yet. Browse the feed to get started." />}
       />
     </SafeAreaView>
   );
@@ -168,5 +148,4 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   statusChip: { paddingHorizontal: spacing.sm, paddingVertical: 4, borderRadius: radius.pill },
-  empty: { padding: spacing.xxl, alignItems: 'center' },
 });

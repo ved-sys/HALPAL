@@ -159,6 +159,15 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  // Each read closes over the userId it started for. If that is no longer
+  // the signed-in user, its result belongs to someone else (or to nobody,
+  // after sign-out) and must be dropped. Otherwise a slow response for the
+  // first account could land after the reset, and a second account on the
+  // same device would see the first one's rows.
+  const userRef = useRef(userId);
+  userRef.current = userId;
+  const isCurrent = useCallback((uid: string | null) => alive.current && uid !== null && userRef.current === uid, []);
+
   const begin = useCallback((c: Collection) => {
     setLoading((prev) => ({ ...prev, [c]: true }));
     setErrors((prev) => ({ ...prev, [c]: null }));
@@ -184,7 +193,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     begin('jobs');
     const [board, mine] = await Promise.all([api.fetchOpenJobs(), api.fetchMyJobs()]);
-    if (!alive.current) return;
+    if (!isCurrent(userId)) return;
     if (board.data) {
       setJobs(board.data);
       indexJobs(board.data);
@@ -201,7 +210,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!userId) return;
       begin('jobs');
       const res = await api.fetchJobById(jobId);
-      if (!alive.current) return;
+      if (!isCurrent(userId)) return;
       if (res.data) indexJobs([res.data]);
       end('jobs', res.error);
     },
@@ -212,7 +221,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     begin('applications');
     const res = await api.fetchMyApplications();
-    if (!alive.current) return;
+    if (!isCurrent(userId)) return;
     if (res.data) {
       setMyApplications(res.data);
       indexJobs(res.data.map((a) => a.job).filter((j): j is Job => Boolean(j)));
@@ -225,7 +234,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!userId) return;
       begin('applications');
       const res = await api.fetchApplicationsForJob(jobId);
-      if (!alive.current) return;
+      if (!isCurrent(userId)) return;
       if (res.data) setApplications((prev) => ({ ...prev, [jobId]: res.data as JobApplication[] }));
       end('applications', res.error);
     },
@@ -236,7 +245,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     begin('offerings');
     const [all, mine] = await Promise.all([api.fetchOfferings(), api.fetchMyOfferings()]);
-    if (!alive.current) return;
+    if (!isCurrent(userId)) return;
     if (all.data) setOfferings(all.data);
     if (mine.data) setMyOfferings(mine.data);
     end('offerings', all.error ?? mine.error);
@@ -246,7 +255,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     begin('chats');
     const [list, unread] = await Promise.all([api.fetchMyChats(), api.fetchUnreadCounts()]);
-    if (!alive.current) return;
+    if (!isCurrent(userId)) return;
     if (list.data) setChats(list.data);
     if (unread.data) setUnreadCounts(unread.data);
     end('chats', list.error ?? unread.error);
@@ -257,7 +266,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       if (!userId) return;
       begin('messages');
       const res = await api.fetchMessages(chatId);
-      if (!alive.current) return;
+      if (!isCurrent(userId)) return;
       if (res.data) setMessagesByChat((prev) => ({ ...prev, [chatId]: res.data as Message[] }));
       end('messages', res.error);
     },
@@ -268,7 +277,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     if (!userId) return;
     begin('bookingRequests');
     const res = await api.fetchMyBookingRequests();
-    if (!alive.current) return;
+    if (!isCurrent(userId)) return;
     if (res.data) setBookingRequests(res.data);
     end('bookingRequests', res.error);
   }, [userId, begin, end]);
@@ -277,7 +286,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (jobId: string) => {
       if (!userId) return;
       const res = await api.fetchReviewsForJob(jobId);
-      if (!alive.current || !res.data) return;
+      if (!isCurrent(userId) || !res.data) return;
       setReviewsByJob((prev) => ({ ...prev, [jobId]: res.data as Review[] }));
     },
     [userId]
@@ -286,7 +295,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
   const refreshProfile = useCallback(async () => {
     if (!userId) return;
     const res = await api.fetchMyProfile();
-    if (!alive.current) return;
+    if (!isCurrent(userId)) return;
     setProfile(res.data);
     setProfileError(res.error);
   }, [userId]);
@@ -482,10 +491,10 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     async (chatId: string) => {
       const res = await api.markChatRead(chatId);
       if (res.error) return failed(res.error);
-      if (alive.current) setUnreadCounts((prev) => ({ ...prev, [chatId]: 0 }));
+      if (isCurrent(userId)) setUnreadCounts((prev) => ({ ...prev, [chatId]: 0 }));
       return succeeded;
     },
-    []
+    [userId, isCurrent]
   );
 
   const verifyCurrentWorker = useCallback(async () => {
@@ -555,6 +564,9 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     const unsubscribe = api.subscribeToChanges({
       chatIds: chatIdKey ? chatIdKey.split(',') : [],
       onMessage: (m) => {
+        // removeChannel is async, so an event can still arrive just after
+        // sign-out or a user switch.
+        if (!isCurrent(userId)) return;
         applyMessageChange(m);
         // An incoming message from the other side relights the dot; the
         // open thread clears it again via markChatRead.
@@ -562,12 +574,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
           setUnreadCounts((prev) => ({ ...prev, [m.chatId]: (prev[m.chatId] ?? 0) + 1 }));
         }
       },
-      onChatUpdate: applyChatChange,
+      onChatUpdate: (c) => {
+        if (isCurrent(userId)) applyChatChange(c);
+      },
       onNewChat: () => void refreshChats(),
-      onJobUpdate: applyJobChange,
+      onJobUpdate: (j) => {
+        if (isCurrent(userId)) applyJobChange(j);
+      },
     });
     return unsubscribe;
-  }, [userId, chatIdKey, applyMessageChange, applyChatChange, applyJobChange, refreshChats]);
+  }, [userId, chatIdKey, isCurrent, applyMessageChange, applyChatChange, applyJobChange, refreshChats]);
 
   const value = useMemo<StoreShape>(
     () => ({
