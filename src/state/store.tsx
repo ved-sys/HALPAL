@@ -94,6 +94,8 @@ interface StoreShape {
   addApplication: (jobId: string, quotedRate: number, note?: string) => Promise<ActionResult>;
   addOffering: (input: api.NewOfferingInput) => Promise<ActionResult>;
   acceptApplication: (jobId: string, applicationId: string) => Promise<ActionResult>;
+  shortlistApplication: (jobId: string, applicationId: string) => Promise<ActionResult>;
+  rejectApplication: (jobId: string, applicationId: string) => Promise<ActionResult>;
   startJob: (jobId: string) => Promise<ActionResult>;
   markJobComplete: (jobId: string) => Promise<ActionResult>;
   /** `matched` is false for a wrong code, which is not an error. */
@@ -362,6 +364,28 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     [loadApplicationsForJob, loadJob, refreshChats]
   );
 
+  // Neither changes the job itself, only the one application, so the
+  // applications list is the only thing to refetch.
+  const shortlistApplication = useCallback(
+    async (jobId: string, applicationId: string) => {
+      const res = await api.shortlistApplication(applicationId);
+      if (res.error) return failed(res.error);
+      await loadApplicationsForJob(jobId);
+      return succeeded;
+    },
+    [loadApplicationsForJob]
+  );
+
+  const rejectApplication = useCallback(
+    async (jobId: string, applicationId: string) => {
+      const res = await api.rejectApplication(applicationId);
+      if (res.error) return failed(res.error);
+      await loadApplicationsForJob(jobId);
+      return succeeded;
+    },
+    [loadApplicationsForJob]
+  );
+
   const runJobRpc = useCallback(
     async (jobId: string, call: () => Promise<api.Result<null>>) => {
       const res = await call();
@@ -577,6 +601,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addApplication,
       addOffering,
       acceptApplication,
+      shortlistApplication,
+      rejectApplication,
       startJob,
       markJobComplete,
       confirmJobCompletion,
@@ -626,6 +652,8 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       addApplication,
       addOffering,
       acceptApplication,
+      shortlistApplication,
+      rejectApplication,
       startJob,
       markJobComplete,
       confirmJobCompletion,

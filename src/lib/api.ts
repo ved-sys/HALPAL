@@ -8,7 +8,8 @@
  * those tables therefore runs server-side, through a function that derives
  * the caller from auth.uid():
  *
- *   accept_application   start_job          mark_job_complete
+ *   accept_application   shortlist_application   reject_application
+ *   start_job            mark_job_complete
  *   confirm_job_completion                  raise_dispute
  *   cancel_job           request_offering_booking
  *   confirm_booking      decline_booking    cancel_booking
@@ -662,6 +663,16 @@ async function callVoidRpc(fn: string, args: Record<string, unknown>): Promise<R
 /** Accepting one application auto-rejects the rest, server-side. */
 export function acceptApplication(jobId: string, applicationId: string): Promise<Result<null>> {
   return callVoidRpc('accept_application', { p_job_id: jobId, p_application_id: applicationId });
+}
+
+/** Owner-only; the server rejects it unless the application is 'applied'. */
+export function shortlistApplication(applicationId: string): Promise<Result<null>> {
+  return callVoidRpc('shortlist_application', { p_application_id: applicationId });
+}
+
+/** Owner-only; the server rejects it unless the application is 'applied'. */
+export function rejectApplication(applicationId: string): Promise<Result<null>> {
+  return callVoidRpc('reject_application', { p_application_id: applicationId });
 }
 
 export function startJob(jobId: string): Promise<Result<null>> {

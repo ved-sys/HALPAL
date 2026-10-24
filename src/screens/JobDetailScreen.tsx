@@ -3,7 +3,7 @@ import { ActivityIndicator, FlatList, Pressable, ScrollView, StyleSheet, Text, T
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, spacing, type } from '@/theme/tokens';
 import { ErrorNote, PrimaryButton, VerificationStamp } from '@/components/atoms';
-import { ApplicantRow } from '@/components/WorkerCards';
+import { ApplicantAction, ApplicantRow } from '@/components/WorkerCards';
 import { useStore } from '@/state/store';
 import { useAuth } from '@/state/AuthContext';
 import { useAppMode } from '@/state/AppMode';
@@ -43,6 +43,8 @@ export function JobDetailScreen({ route, navigation }: Props) {
     loadJob,
     loadApplicationsForJob,
     acceptApplication,
+    shortlistApplication,
+    rejectApplication,
     addApplication,
     startJob,
     markJobComplete,
@@ -71,6 +73,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const [confirmingCancel, setConfirmingCancel] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [applicantError, setApplicantError] = useState<string | null>(null);
   const [peekedOtp, setPeekedOtp] = useState<string | null>(null);
 
   useEffect(() => {
@@ -124,6 +127,17 @@ export function JobDetailScreen({ route, navigation }: Props) {
     const res = await action();
     setBusy(null);
     if (!res.ok) setActionError(res.error);
+  }
+
+  // Same as run(), but the error lands under the Applications heading,
+  // next to the card that caused it, rather than at the top of the screen.
+  async function runApplicant(key: string, action: () => Promise<{ ok: boolean; error: string | null }>) {
+    if (busy) return;
+    setApplicantError(null);
+    setBusy(key);
+    const res = await action();
+    setBusy(null);
+    if (!res.ok) setApplicantError(res.error);
   }
 
   async function handleConfirmCompletion() {
@@ -465,7 +479,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
             <Text style={[type.h2, { color: colors.ink, marginBottom: spacing.sm }]}>
               Applications ({jobApplications.length})
             </Text>
-            <ErrorNote message={errors.applications} />
+            <ErrorNote message={applicantError ?? errors.applications} />
             {loading.applications && jobApplications.length === 0 ? (
               <ActivityIndicator color={colors.primary} />
             ) : jobApplications.length === 0 ? (
@@ -478,8 +492,15 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 renderItem={({ item }) => (
                   <ApplicantRow
                     application={item}
-                    busy={busy === `accept_${item.id}`}
-                    onAccept={() => void run(`accept_${item.id}`, () => acceptApplication(jobId, item.id))}
+                    actionable={APPLICABLE_STATUSES.includes(job.status)}
+                    busy={
+                      busy?.endsWith(`_${item.id}`) ? (busy.split('_')[0] as ApplicantAction) : null
+                    }
+                    onAccept={() => void runApplicant(`accept_${item.id}`, () => acceptApplication(jobId, item.id))}
+                    onShortlist={() =>
+                      void runApplicant(`shortlist_${item.id}`, () => shortlistApplication(jobId, item.id))
+                    }
+                    onReject={() => void runApplicant(`reject_${item.id}`, () => rejectApplication(jobId, item.id))}
                   />
                 )}
               />

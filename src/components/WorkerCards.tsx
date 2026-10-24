@@ -22,25 +22,44 @@ export function Avatar({ name, color, size = 44 }: { name: string; color: string
   );
 }
 
+export type ApplicantAction = 'accept' | 'shortlist' | 'reject';
+
+const statusChip: Record<JobApplication['status'], { label: string; bg: string; fg: string } | null> = {
+  applied: null,
+  shortlisted: { label: 'SHORTLISTED', bg: colors.primarySoft, fg: colors.primaryDark },
+  accepted: { label: 'ACCEPTED', bg: colors.successSoft, fg: colors.success },
+  rejected: { label: 'REJECTED', bg: colors.canvasAlt, fg: colors.inkFaint },
+};
+
 /**
- * Accept is the only decision offered here. The backend exposes
- * accept_application (which auto-rejects the rest) but no per-application
- * shortlist or reject, and RLS blocks the direct UPDATE that would stand
- * in for them — so those buttons would have had nothing to call.
+ * The customer's view of one application. Which buttons appear mirrors
+ * what the server will allow: accept on 'applied' or 'shortlisted',
+ * shortlist only on 'applied'. Rejected and accepted cards are final and
+ * carry no actions. `actionable` is false once the job has moved past
+ * taking applications, since accept_application refuses then.
  */
 export function ApplicantRow({
   application,
-  onAccept,
+  actionable,
   busy,
+  onAccept,
+  onShortlist,
+  onReject,
 }: {
   application: JobApplication;
+  actionable: boolean;
+  /** The action in flight on this card, if any. */
+  busy: ApplicantAction | null;
   onAccept: () => void;
-  busy?: boolean;
+  onShortlist: () => void;
+  onReject: () => void;
 }) {
-  const { worker } = application;
-  const decided = application.status === 'accepted' || application.status === 'rejected';
+  const { worker, status } = application;
+  const chip = statusChip[status];
+  const open = actionable && (status === 'applied' || status === 'shortlisted');
+  const inFlight = busy !== null;
   return (
-    <View style={[styles.applicantCard, shadow.card]}>
+    <View style={[styles.applicantCard, shadow.card, status === 'rejected' && styles.applicantDimmed]}>
       <View style={styles.applicantHeader}>
         <Avatar name={worker.fullName} color={worker.avatarColor} />
         <View style={{ flex: 1, marginLeft: spacing.md }}>
@@ -58,28 +77,42 @@ export function ApplicantRow({
         </Text>
       )}
 
-      {application.status === 'shortlisted' && (
+      {chip && (
         <View style={{ marginTop: spacing.sm }}>
-          <View style={styles.shortlistTag}>
-            <Text style={[type.label, { color: colors.primaryDark }]}>SHORTLISTED</Text>
+          <View style={[styles.statusTag, { backgroundColor: chip.bg }]}>
+            <Text style={[type.label, { color: chip.fg }]}>{chip.label}</Text>
           </View>
         </View>
       )}
 
-      {!decided && (
+      {open && (
         <View style={styles.actionRow}>
           <PrimaryButton
-            label={busy ? 'Accepting…' : 'Accept'}
+            label={busy === 'accept' ? 'Accepting…' : 'Accept'}
             variant="teal"
-            disabled={busy}
+            disabled={inFlight}
             onPress={onAccept}
             style={{ flex: 1 }}
           />
+          {status === 'applied' && (
+            <PrimaryButton
+              label={busy === 'shortlist' ? 'Shortlisting…' : 'Shortlist'}
+              variant="outline"
+              disabled={inFlight}
+              onPress={onShortlist}
+              style={{ flex: 1 }}
+            />
+          )}
+          <Pressable
+            onPress={onReject}
+            disabled={inFlight}
+            style={[styles.rejectBtn, inFlight && { opacity: 0.5 }]}
+          >
+            <Text style={[type.small, { color: colors.danger }]}>
+              {busy === 'reject' ? 'Rejecting…' : 'Reject'}
+            </Text>
+          </Pressable>
         </View>
-      )}
-
-      {application.status === 'rejected' && (
-        <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.sm }]}>Not selected</Text>
       )}
     </View>
   );
@@ -126,9 +159,9 @@ const styles = StyleSheet.create({
     borderColor: colors.border,
   },
   applicantHeader: { flexDirection: 'row', alignItems: 'center' },
-  shortlistTag: {
+  applicantDimmed: { opacity: 0.55 },
+  statusTag: {
     alignSelf: 'flex-start',
-    backgroundColor: colors.primarySoft,
     paddingHorizontal: spacing.sm,
     paddingVertical: 3,
     borderRadius: radius.pill,
