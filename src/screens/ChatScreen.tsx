@@ -15,12 +15,13 @@ import { colors, radius, spacing, type } from '@/theme/tokens';
 import { ErrorNote, PrimaryButton } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAuth } from '@/state/AuthContext';
+import { isDeletedProfile } from '@/lib/profileRules';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
 type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
-export function ChatScreen({ route }: Props) {
+export function ChatScreen({ route, navigation }: Props) {
   const { chatId } = route.params;
   const {
     messagesByChat,
@@ -49,8 +50,20 @@ export function ChatScreen({ route }: Props) {
   // chat, workerId is the offering's owner and customerId the requester.
   const pendingBookingId =
     chat?.bookingRequestId != null && chat.bookingStatus === 'pending' ? chat.bookingRequestId : null;
-  const isOfferingOwner = pendingBookingId != null && chat?.workerId === currentUserId;
-  const isRequester = pendingBookingId != null && chat?.customerId === currentUserId;
+  const other = chat ? (chat.customerId === currentUserId ? chat.worker : chat.customer) : undefined;
+  const otherDeleted = isDeletedProfile(other);
+  const isOfferingOwner = !otherDeleted && pendingBookingId != null && chat?.workerId === currentUserId;
+  const isRequester = !otherDeleted && pendingBookingId != null && chat?.customerId === currentUserId;
+
+  // The header names who you're talking to, greyed for a deleted account.
+  const otherName = other?.fullName;
+  useEffect(() => {
+    if (!otherName) return;
+    navigation.setOptions({
+      title: otherName,
+      headerTitleStyle: { color: otherDeleted ? colors.inkFaint : colors.ink },
+    });
+  }, [navigation, otherName, otherDeleted]);
 
   useEffect(() => {
     void loadMessages(chatId);
@@ -152,24 +165,32 @@ export function ChatScreen({ route }: Props) {
             />
           </View>
         )}
-        <View style={styles.inputRow}>
-          <TextInput
-            value={text}
-            onChangeText={setText}
-            placeholder="Message"
-            placeholderTextColor={colors.inkFaint}
-            style={styles.input}
-            editable={!sending}
-            onSubmitEditing={() => void handleSend()}
-          />
-          <Pressable
-            style={[styles.sendBtn, sending && { opacity: 0.5 }]}
-            disabled={sending}
-            onPress={() => void handleSend()}
-          >
-            <Text style={[type.bodyStrong, { color: colors.onPrimary }]}>{sending ? '…' : 'Send'}</Text>
-          </Pressable>
-        </View>
+        {otherDeleted ? (
+          <View style={styles.inputRow}>
+            <Text style={[type.small, { color: colors.inkFaint, flex: 1, textAlign: 'center' }]}>
+              This person deleted their account. You can read the history but not send messages.
+            </Text>
+          </View>
+        ) : (
+          <View style={styles.inputRow}>
+            <TextInput
+              value={text}
+              onChangeText={setText}
+              placeholder="Message"
+              placeholderTextColor={colors.inkFaint}
+              style={styles.input}
+              editable={!sending}
+              onSubmitEditing={() => void handleSend()}
+            />
+            <Pressable
+              style={[styles.sendBtn, sending && { opacity: 0.5 }]}
+              disabled={sending}
+              onPress={() => void handleSend()}
+            >
+              <Text style={[type.bodyStrong, { color: colors.onPrimary }]}>{sending ? '…' : 'Send'}</Text>
+            </Pressable>
+          </View>
+        )}
       </SafeAreaView>
     </KeyboardAvoidingView>
   );

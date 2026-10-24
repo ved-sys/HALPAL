@@ -3,6 +3,7 @@ import { Pressable, StyleSheet, Text, View } from 'react-native';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
 import { JobApplication, WorkerOffering } from '@/types/models';
 import { PrimaryButton, RatingLine, VerificationStamp } from './atoms';
+import { isDeletedProfile } from '@/lib/profileRules';
 
 export function Avatar({ name, color, size = 44 }: { name: string; color: string; size?: number }) {
   const initials = name
@@ -56,14 +57,16 @@ export function ApplicantRow({
 }) {
   const { worker, status } = application;
   const chip = statusChip[status];
-  const open = actionable && (status === 'applied' || status === 'shortlisted');
+  // A deleted account can't be hired or messaged, so its card is read-only.
+  const deleted = isDeletedProfile(worker);
+  const open = !deleted && actionable && (status === 'applied' || status === 'shortlisted');
   const inFlight = busy !== null;
   return (
-    <View style={[styles.applicantCard, shadow.card, status === 'rejected' && styles.applicantDimmed]}>
+    <View style={[styles.applicantCard, shadow.card, (status === 'rejected' || deleted) && styles.applicantDimmed]}>
       <View style={styles.applicantHeader}>
-        <Avatar name={worker.fullName} color={worker.avatarColor} />
+        <Avatar name={worker.fullName} color={deleted ? colors.inkFaint : worker.avatarColor} />
         <View style={{ flex: 1, marginLeft: spacing.md }}>
-          <Text style={[type.bodyStrong, { color: colors.ink }]}>{worker.fullName}</Text>
+          <Text style={[type.bodyStrong, { color: deleted ? colors.inkFaint : colors.ink }]}>{worker.fullName}</Text>
           <RatingLine rating={worker.avgRating} count={worker.totalJobsCompleted} />
         </View>
         <Text style={[type.mono, { color: colors.primaryDark }]}>₹{application.quotedRate}</Text>
@@ -75,6 +78,10 @@ export function ApplicantRow({
         <Text style={[type.small, { color: colors.inkSoft, marginTop: spacing.sm }]}>
           "{application.note}"
         </Text>
+      )}
+
+      {deleted && (
+        <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.sm }]}>This account was deleted.</Text>
       )}
 
       {chip && (
@@ -119,13 +126,22 @@ export function ApplicantRow({
 }
 
 export function OfferingCard({ offering, onPress }: { offering: WorkerOffering; onPress: () => void }) {
+  // Deletion cancels a worker's offerings server-side, so this should be
+  // rare; if one slips through it is shown but can't be opened or booked.
+  const deleted = isDeletedProfile(offering.worker);
   return (
-    <Pressable onPress={onPress} style={({ pressed }) => [{ opacity: pressed ? 0.9 : 1 }]}>
+    <Pressable
+      onPress={onPress}
+      disabled={deleted}
+      style={({ pressed }) => [{ opacity: deleted ? 0.55 : pressed ? 0.9 : 1 }]}
+    >
       <View style={[styles.offeringCard, shadow.card]}>
         <View style={styles.applicantHeader}>
-          <Avatar name={offering.worker.fullName} color={offering.worker.avatarColor} />
+          <Avatar name={offering.worker.fullName} color={deleted ? colors.inkFaint : offering.worker.avatarColor} />
           <View style={{ flex: 1, marginLeft: spacing.md }}>
-            <Text style={[type.bodyStrong, { color: colors.ink }]}>{offering.worker.fullName}</Text>
+            <Text style={[type.bodyStrong, { color: deleted ? colors.inkFaint : colors.ink }]}>
+              {offering.worker.fullName}
+            </Text>
             <RatingLine rating={offering.worker.avgRating} count={offering.worker.totalJobsCompleted} />
           </View>
           {offering.pricingType === 'custom' && offering.moderationStatus === 'pending_review' && (

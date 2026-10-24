@@ -6,6 +6,7 @@ import { ErrorNote, ListEmpty } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAuth } from '@/state/AuthContext';
 import { useAppMode } from '@/state/AppMode';
+import { isDeletedProfile } from '@/lib/profileRules';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
@@ -40,12 +41,15 @@ export function MessagesScreen({ navigation }: Props) {
           const loaded = messagesByChat[item.id];
           const lastMessage = loaded?.[loaded.length - 1];
           const hasUnread = (unreadCounts[item.id] ?? 0) > 0;
+          // Still opens, so the history can be read; the chat itself is
+          // read-only for a deleted account.
+          const deleted = isDeletedProfile(other);
           return (
             <Pressable onPress={() => navigation.navigate('Chat', { chatId: item.id })}>
-              <View style={[styles.row, shadow.card]}>
+              <View style={[styles.row, shadow.card, deleted && { opacity: 0.55 }]}>
                 <View style={{ flex: 1 }}>
                   <View style={styles.rowHeader}>
-                    <Text style={[type.bodyStrong, { color: colors.ink }]}>
+                    <Text style={[type.bodyStrong, { color: deleted ? colors.inkFaint : colors.ink }]}>
                       {other?.fullName ?? (currentUserId === item.customerId ? 'Worker' : 'Customer')}
                     </Text>
                     {hasUnread && <View style={styles.unreadDot} />}

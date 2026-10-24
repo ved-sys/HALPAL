@@ -6,6 +6,7 @@ import { ErrorNote, PrimaryButton, RatingLine, VerificationStamp } from '@/compo
 import { Avatar } from '@/components/WorkerCards';
 import { useStore } from '@/state/store';
 import { useAppMode } from '@/state/AppMode';
+import { isDeletedProfile } from '@/lib/profileRules';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
@@ -83,7 +84,13 @@ export function OfferingDetailScreen({ route, navigation }: Props) {
           </Text>
         </View>
 
-        {mode === 'customer' ? (
+        {isDeletedProfile(offering.worker) ? (
+          <View style={styles.section}>
+            <Text style={[type.small, { color: colors.inkFaint }]}>
+              This worker deleted their account, so this offering can't be booked.
+            </Text>
+          </View>
+        ) : mode === 'customer' ? (
           <View style={styles.section}>
             <PrimaryButton
               label={requesting ? 'Requesting…' : 'Request booking'}
