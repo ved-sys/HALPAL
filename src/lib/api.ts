@@ -89,6 +89,7 @@ export interface ProfileRow {
 export interface JobRow {
   id: string;
   customer_id: string;
+  worker_id: string | null;
   description: string;
   category_tags: string[] | null;
   budget_min: number;
@@ -191,6 +192,7 @@ export function rowToJob(r: JobRow): Job {
   return {
     id: r.id,
     customerId: r.customer_id,
+    workerId: r.worker_id ?? null,
     description: r.description,
     categoryTags: (r.category_tags ?? []) as JobCategory[],
     budgetMin: r.budget_min,

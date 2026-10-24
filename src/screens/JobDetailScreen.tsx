@@ -27,6 +27,9 @@ const CHAT_ELIGIBLE_STATUSES: JobStatus[] = [
   'cancelled',
 ];
 const APPLICABLE_STATUSES: JobStatus[] = ['open', 'applications_received'];
+// confirm_job_completion locks after this many wrong codes and keeps
+// returning false, so retrying past it can never succeed.
+const MAX_OTP_ATTEMPTS = 5;
 // Past worker_selected the job is under way, and cancel_job rejects it.
 const CANCELLABLE_STATUSES: JobStatus[] = ['open', 'applications_received', 'worker_selected'];
 
@@ -66,6 +69,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const [note, setNote] = useState('');
   const [otpInput, setOtpInput] = useState('');
   const [otpMismatch, setOtpMismatch] = useState(false);
+  // Counted client-side only to word the message; the lock itself is
+  // enforced by the server.
+  const [otpFailures, setOtpFailures] = useState(0);
   const [sosActive, setSosActive] = useState(false);
   const [stars, setStars] = useState(0);
   const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -81,10 +87,11 @@ export function JobDetailScreen({ route, navigation }: Props) {
   }, [jobId, loadJob]);
 
   // Only the posting customer can read the application list, so asking as
-  // a worker would just trip RLS.
+  // anyone else would just trip RLS.
+  const ownsJob = job != null && job.customerId === user?.id;
   useEffect(() => {
-    if (mode === 'customer') void loadApplicationsForJob(jobId);
-  }, [jobId, mode, loadApplicationsForJob]);
+    if (mode === 'customer' && ownsJob) void loadApplicationsForJob(jobId);
+  }, [jobId, mode, ownsJob, loadApplicationsForJob]);
 
   // The review each side left is the thing to show after submitting, so
   // it has to be read back rather than assumed from local state.
@@ -111,9 +118,12 @@ export function JobDetailScreen({ route, navigation }: Props) {
   const alreadyApplied = myApplications.some((a) => a.jobId === jobId);
   const isVerified = profile?.isVerified ?? false;
   const chat = chats.find((c) => c.jobId === jobId);
-  // The job row carries no worker, so the counterparty comes from the chat
-  // that accepting the application opened.
-  const revieweeId = mode === 'customer' ? chat?.workerId : job.customerId;
+  // Roles come from the job row itself, not from the mode toggle: the mode
+  // only picks which view to show, and must never grant an action.
+  const isCustomer = mode === 'customer' && job.customerId === user?.id;
+  const isAssignedWorker = mode === 'worker' && job.workerId != null && job.workerId === user?.id;
+  // submit_review only accepts the other party on this job.
+  const revieweeId = isCustomer ? job.workerId : isAssignedWorker ? job.customerId : null;
   const myReview = (reviewsByJob[jobId] ?? []).find((r) => r.reviewerId === user?.id);
 
   function toggleTag(tag: string) {
@@ -152,6 +162,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
       return;
     }
     setOtpMismatch(!res.matched);
+    if (!res.matched) setOtpFailures((n) => n + 1);
   }
 
   async function handlePeekOtp() {
@@ -165,10 +176,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
   }
 
   async function handleSubmitReview() {
-    if (!revieweeId) {
-      setActionError('Cannot tell who to review until the chat for this job exists.');
-      return;
-    }
+    // The section only renders with a reviewee, but the guard keeps the
+    // type narrow and the call honest.
+    if (!revieweeId) return;
     await run('review', () => submitReview(jobId, revieweeId, stars, selectedTags, reviewText.trim()));
   }
 
@@ -208,7 +218,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {mode === 'worker' && job.status === 'worker_selected' && (
+        {isAssignedWorker && job.status === 'worker_selected' && (
           <View style={styles.section}>
             <PrimaryButton
               label={busy === 'start' ? 'Starting…' : 'Start job'}
@@ -220,7 +230,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
         {job.status === 'in_progress' && (
           <View style={styles.section}>
-            {mode === 'worker' && (
+            {isAssignedWorker && (
               <PrimaryButton
                 label={busy === 'complete' ? 'Marking…' : 'Mark complete'}
                 disabled={busy !== null}
@@ -239,7 +249,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {mode === 'worker' && job.status === 'awaiting_confirmation' && (
+        {isAssignedWorker && job.status === 'awaiting_confirmation' && (
           <View style={styles.section}>
             <View style={styles.infoBox}>
               <Text style={[type.body, { color: colors.teal }]}>
@@ -249,7 +259,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {mode === 'customer' && job.status === 'awaiting_confirmation' && (
+        {isCustomer && job.status === 'awaiting_confirmation' && (
           <View style={styles.section}>
             <Text style={[type.h2, { color: colors.ink }]}>Confirm completion</Text>
             <Text style={[type.small, { color: colors.inkSoft, marginTop: spacing.xs }]}>
@@ -267,15 +277,24 @@ export function JobDetailScreen({ route, navigation }: Props) {
               placeholderTextColor={colors.inkFaint}
               style={[styles.input, { marginTop: spacing.sm }]}
             />
-            {otpMismatch && (
+            {otpFailures >= MAX_OTP_ATTEMPTS ? (
               <Text style={[type.small, { color: colors.danger, marginTop: spacing.xs }]}>
-                That code doesn't match. Try again.
+                Too many wrong attempts, so code entry is locked for this job. Use "Report a problem" below to
+                raise a dispute.
               </Text>
+            ) : (
+              otpMismatch && (
+                <Text style={[type.small, { color: colors.danger, marginTop: spacing.xs }]}>
+                  {`That code doesn't match. ${MAX_OTP_ATTEMPTS - otpFailures} ${
+                    MAX_OTP_ATTEMPTS - otpFailures === 1 ? 'attempt' : 'attempts'
+                  } left.`}
+                </Text>
+              )
             )}
             <PrimaryButton
               label={busy === 'confirm' ? 'Confirming…' : 'Confirm completion'}
               onPress={() => void handleConfirmCompletion()}
-              disabled={otpInput.trim().length !== 6 || busy !== null}
+              disabled={otpInput.trim().length !== 6 || busy !== null || otpFailures >= MAX_OTP_ATTEMPTS}
               style={{ marginTop: spacing.md }}
             />
 
@@ -318,7 +337,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {job.status === 'confirmed_completed' && (
+        {job.status === 'confirmed_completed' && revieweeId && (
           <View style={styles.section}>
             <Text style={[type.h2, { color: colors.ink }]}>Leave a review</Text>
             {myReview ? (
@@ -381,14 +400,9 @@ export function JobDetailScreen({ route, navigation }: Props) {
                 <PrimaryButton
                   label={busy === 'review' ? 'Submitting…' : 'Submit review'}
                   onPress={() => void handleSubmitReview()}
-                  disabled={stars === 0 || !revieweeId || busy !== null}
+                  disabled={stars === 0 || busy !== null}
                   style={{ marginTop: spacing.md }}
                 />
-                {!revieweeId && (
-                  <Text style={[type.small, { color: colors.inkFaint, marginTop: spacing.xs }]}>
-                    Waiting on this job's chat to identify the other party.
-                  </Text>
-                )}
               </View>
             )}
           </View>
@@ -443,7 +457,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {mode === 'customer' && CANCELLABLE_STATUSES.includes(job.status) && (
+        {isCustomer && CANCELLABLE_STATUSES.includes(job.status) && (
           <View style={styles.section}>
             {confirmingCancel ? (
               <View style={styles.warningBox}>
@@ -474,7 +488,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
           </View>
         )}
 
-        {mode === 'customer' && (
+        {isCustomer && (
           <View style={styles.section}>
             <Text style={[type.h2, { color: colors.ink, marginBottom: spacing.sm }]}>
               Applications ({jobApplications.length})

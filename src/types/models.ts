@@ -37,6 +37,9 @@ export interface WorkerSummary {
 export interface Job {
   id: string;
   customerId: string;
+  // The accepted worker; null until an application is accepted (or a
+  // booking confirmed).
+  workerId: string | null;
   description: string;
   categoryTags: JobCategory[];
   budgetMin: number;
