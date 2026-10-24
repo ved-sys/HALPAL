@@ -539,6 +539,40 @@ export async function fetchMyProfile(): Promise<Result<WorkerSummary>> {
   }
 }
 
+export interface ProfileUpdate {
+  fullName: string;
+  bio: string;
+  skills: string[];
+  avatarColor: string;
+}
+
+/**
+ * Clients may update only full_name, avatar_color, avatar_url, skills and
+ * bio on their own row; the server rejects anything else. avatar_url is
+ * left untouched until image upload exists.
+ */
+export async function updateMyProfile(input: ProfileUpdate): Promise<Result<WorkerSummary>> {
+  const uid = await currentUserId();
+  if (uid.error || !uid.data) return fail(uid.error ?? 'Not signed in.');
+  try {
+    const { data, error } = await supabase
+      .from('profiles')
+      .update({
+        full_name: input.fullName,
+        bio: input.bio,
+        skills: input.skills,
+        avatar_color: input.avatarColor,
+      })
+      .eq('id', uid.data)
+      .select(PROFILE_COLS)
+      .single();
+    if (error) return fail(message(error));
+    return ok(rowToProfile(data as unknown as ProfileRow));
+  } catch (e) {
+    return fail(message(e));
+  }
+}
+
 export async function fetchReviewsForJob(jobId: string): Promise<Result<Review[]>> {
   try {
     const { data, error } = await supabase

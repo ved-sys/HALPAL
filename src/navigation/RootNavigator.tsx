@@ -13,6 +13,7 @@ import { CreateOfferingScreen } from '@/screens/CreateOfferingScreen';
 import { SettingsScreen } from '@/screens/SettingsScreen';
 import { PrivacyPolicyScreen, TermsScreen } from '@/screens/LegalScreens';
 import { DeleteAccountScreen } from '@/screens/DeleteAccountScreen';
+import { EditProfileScreen } from '@/screens/EditProfileScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -26,6 +27,7 @@ export type RootStackParamList = {
   PrivacyPolicy: undefined;
   Terms: undefined;
   DeleteAccount: undefined;
+  EditProfile: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -72,6 +74,7 @@ export function RootNavigator() {
           <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
           <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ title: 'Privacy Policy' }} />
           <Stack.Screen name="Terms" component={TermsScreen} options={{ title: 'Terms of Service' }} />
+          <Stack.Screen name="EditProfile" component={EditProfileScreen} options={{ title: 'Edit profile' }} />
           <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ title: 'Delete account' }} />
           <Stack.Screen
             name="PostJob"

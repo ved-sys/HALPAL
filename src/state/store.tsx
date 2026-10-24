@@ -109,6 +109,7 @@ interface StoreShape {
   sendMessage: (chatId: string, text: string) => Promise<ActionResult>;
   markChatRead: (chatId: string) => Promise<ActionResult>;
   verifyCurrentWorker: () => Promise<ActionResult>;
+  updateProfile: (input: api.ProfileUpdate) => Promise<ActionResult>;
   submitReview: (
     jobId: string,
     revieweeId: string,
@@ -506,6 +507,16 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
     return succeeded;
   }, [refreshProfile]);
 
+  const updateProfile = useCallback(
+    async (input: api.ProfileUpdate) => {
+      const res = await api.updateMyProfile(input);
+      if (res.error) return failed(res.error);
+      await refreshProfile();
+      return succeeded;
+    },
+    [refreshProfile]
+  );
+
   const submitReview = useCallback(
     async (jobId: string, revieweeId: string, stars: number, tags: string[], reviewText: string) => {
       const res = await api.submitReview(jobId, revieweeId, stars, tags, reviewText);
@@ -643,6 +654,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       sendMessage,
       markChatRead,
       verifyCurrentWorker,
+      updateProfile,
       submitReview,
       peekJobOtp,
       deleteMyAccount,
@@ -695,6 +707,7 @@ export function StoreProvider({ children }: { children: React.ReactNode }) {
       sendMessage,
       markChatRead,
       verifyCurrentWorker,
+      updateProfile,
       submitReview,
       peekJobOtp,
       deleteMyAccount,

@@ -53,6 +53,18 @@ export const colors = {
   white: '#FFFFFF',
 } as const;
 
+// Avatar colours a user can pick, drawn from the tokens above. Avatar
+// tints its background from the hex value, so entries must stay hex.
+// danger is left out: it is reserved for SOS and disputes.
+export const avatarPalette = [
+  colors.primary,
+  colors.primaryDark,
+  colors.teal,
+  colors.success,
+  colors.inkSoft,
+  colors.muted,
+] as const;
+
 export const spacing = {
   xs: 4,
   sm: 8,

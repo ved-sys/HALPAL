@@ -58,10 +58,16 @@ export function ProfileScreen({ navigation }: Props) {
       <ScrollView contentContainerStyle={{ paddingBottom: spacing.xxxl }}>
         <View style={styles.header}>
           <Avatar name={profile.fullName} color={profile.avatarColor} size={64} />
-          <View style={{ marginLeft: spacing.lg }}>
+          <View style={{ marginLeft: spacing.lg, flex: 1 }}>
             <Text style={[type.h1, { color: colors.ink }]}>{profile.fullName}</Text>
             <RatingLine rating={profile.avgRating} count={profile.totalJobsCompleted} />
           </View>
+        </View>
+        {profile.bio ? (
+          <Text style={[type.body, { color: colors.inkSoft, paddingHorizontal: spacing.lg }]}>{profile.bio}</Text>
+        ) : null}
+        <View style={styles.section}>
+          <PrimaryButton label="Edit profile" variant="outline" onPress={() => navigation.navigate('EditProfile')} />
         </View>
 
         <View style={styles.section}>

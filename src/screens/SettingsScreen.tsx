@@ -16,6 +16,11 @@ export function SettingsScreen({ navigation }: Props) {
   return (
     <SafeAreaView style={styles.container} edges={['bottom']}>
       <ScrollView contentContainerStyle={{ padding: spacing.lg, paddingBottom: spacing.xxxl }}>
+        <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>PROFILE</Text>
+        <View style={[styles.group, { marginBottom: spacing.xl }]}>
+          <Row label="Edit profile" onPress={() => navigation.navigate('EditProfile')} />
+        </View>
+
         <Text style={[type.label, { color: colors.inkFaint, marginBottom: spacing.sm }]}>LEGAL</Text>
         <View style={styles.group}>
           <Row label="Privacy Policy" onPress={() => navigation.navigate('PrivacyPolicy')} />
