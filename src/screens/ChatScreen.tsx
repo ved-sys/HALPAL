@@ -15,7 +15,6 @@ import { colors, radius, spacing, type } from '@/theme/tokens';
 import { ErrorNote, PrimaryButton } from '@/components/atoms';
 import { useStore } from '@/state/store';
 import { useAuth } from '@/state/AuthContext';
-import { useAppMode } from '@/state/AppMode';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
 
@@ -23,22 +22,35 @@ type Props = NativeStackScreenProps<RootStackParamList, 'Chat'>;
 
 export function ChatScreen({ route }: Props) {
   const { chatId } = route.params;
-  const { messagesByChat, sendMessage, markChatRead, loadMessages, chats, confirmBooking, loading, errors } =
-    useStore();
+  const {
+    messagesByChat,
+    sendMessage,
+    markChatRead,
+    loadMessages,
+    chats,
+    confirmBooking,
+    declineBooking,
+    cancelBooking,
+    loading,
+    errors,
+  } = useStore();
   const { user } = useAuth();
-  const { mode } = useAppMode();
   const currentUserId = user?.id ?? '';
   const messages = messagesByChat[chatId] ?? [];
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
-  const [confirming, setConfirming] = useState(false);
+  const [bookingBusy, setBookingBusy] = useState<'confirm' | 'decline' | 'cancel' | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const chat = chats.find((c) => c.id === chatId);
   // bookingStatus rides along on the chat row (see fetchMyChats), so the
-  // worker's confirm affordance needs no separate booking lookup.
-  const showConfirmBooking =
-    mode === 'worker' && chat?.bookingRequestId != null && chat.bookingStatus === 'pending';
+  // booking controls need no separate lookup. Who sees which control comes
+  // from the chat's own participants, not the mode toggle: on a booking
+  // chat, workerId is the offering's owner and customerId the requester.
+  const pendingBookingId =
+    chat?.bookingRequestId != null && chat.bookingStatus === 'pending' ? chat.bookingRequestId : null;
+  const isOfferingOwner = pendingBookingId != null && chat?.workerId === currentUserId;
+  const isRequester = pendingBookingId != null && chat?.customerId === currentUserId;
 
   useEffect(() => {
     void loadMessages(chatId);
@@ -64,12 +76,17 @@ export function ChatScreen({ route }: Props) {
     setText('');
   }
 
-  async function handleConfirmBooking() {
-    if (!chat?.bookingRequestId || confirming) return;
+  async function runBooking(
+    key: 'confirm' | 'decline' | 'cancel',
+    action: (bookingId: string) => Promise<{ ok: boolean; error: string | null }>
+  ) {
+    if (!pendingBookingId || bookingBusy) return;
     setActionError(null);
-    setConfirming(true);
-    const res = await confirmBooking(chat.bookingRequestId);
-    setConfirming(false);
+    setBookingBusy(key);
+    // Each action refetches the chats, so the controls disappear once the
+    // server reports the booking is no longer pending.
+    const res = await action(pendingBookingId);
+    setBookingBusy(null);
     if (!res.ok) setActionError(res.error);
   }
 
@@ -99,16 +116,39 @@ export function ChatScreen({ route }: Props) {
           }
         />
         <ErrorNote message={actionError ?? errors.messages} style={{ marginHorizontal: spacing.lg }} />
-        {showConfirmBooking && (
+        {isOfferingOwner && (
           <View style={styles.confirmBanner}>
             <Text style={[type.small, { color: colors.inkSoft, marginBottom: spacing.sm }]}>
               This customer wants to book your service.
             </Text>
+            <View style={styles.bookingRow}>
+              <PrimaryButton
+                label={bookingBusy === 'confirm' ? 'Confirming…' : 'Confirm'}
+                variant="teal"
+                disabled={bookingBusy !== null}
+                onPress={() => void runBooking('confirm', confirmBooking)}
+                style={{ flex: 1 }}
+              />
+              <PrimaryButton
+                label={bookingBusy === 'decline' ? 'Declining…' : 'Decline'}
+                variant="outline"
+                disabled={bookingBusy !== null}
+                onPress={() => void runBooking('decline', declineBooking)}
+                style={{ flex: 1 }}
+              />
+            </View>
+          </View>
+        )}
+        {isRequester && (
+          <View style={styles.confirmBanner}>
+            <Text style={[type.small, { color: colors.inkSoft, marginBottom: spacing.sm }]}>
+              Your booking request is waiting for the worker to confirm.
+            </Text>
             <PrimaryButton
-              label={confirming ? 'Confirming…' : 'Confirm booking'}
-              variant="teal"
-              disabled={confirming}
-              onPress={() => void handleConfirmBooking()}
+              label={bookingBusy === 'cancel' ? 'Cancelling…' : 'Cancel request'}
+              variant="outline"
+              disabled={bookingBusy !== null}
+              onPress={() => void runBooking('cancel', cancelBooking)}
             />
           </View>
         )}
@@ -157,6 +197,7 @@ const styles = StyleSheet.create({
     borderTopColor: colors.border,
     backgroundColor: colors.tealSoft,
   },
+  bookingRow: { flexDirection: 'row', gap: spacing.sm },
   inputRow: {
     flexDirection: 'row',
     gap: spacing.sm,
