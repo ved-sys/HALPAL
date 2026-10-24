@@ -10,6 +10,9 @@ import { PostJobScreen } from '@/screens/PostJobScreen';
 import { ChatScreen } from '@/screens/ChatScreen';
 import { OfferingDetailScreen } from '@/screens/OfferingDetailScreen';
 import { CreateOfferingScreen } from '@/screens/CreateOfferingScreen';
+import { SettingsScreen } from '@/screens/SettingsScreen';
+import { PrivacyPolicyScreen, TermsScreen } from '@/screens/LegalScreens';
+import { DeleteAccountScreen } from '@/screens/DeleteAccountScreen';
 
 export type RootStackParamList = {
   Login: undefined;
@@ -19,6 +22,10 @@ export type RootStackParamList = {
   Chat: { chatId: string };
   OfferingDetail: { offeringId: string };
   CreateOffering: undefined;
+  Settings: undefined;
+  PrivacyPolicy: undefined;
+  Terms: undefined;
+  DeleteAccount: undefined;
 };
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -62,6 +69,10 @@ export function RootNavigator() {
             component={CreateOfferingScreen}
             options={{ title: 'List a service' }}
           />
+          <Stack.Screen name="Settings" component={SettingsScreen} options={{ title: 'Settings' }} />
+          <Stack.Screen name="PrivacyPolicy" component={PrivacyPolicyScreen} options={{ title: 'Privacy Policy' }} />
+          <Stack.Screen name="Terms" component={TermsScreen} options={{ title: 'Terms of Service' }} />
+          <Stack.Screen name="DeleteAccount" component={DeleteAccountScreen} options={{ title: 'Delete account' }} />
           <Stack.Screen
             name="PostJob"
             component={PostJobScreen}

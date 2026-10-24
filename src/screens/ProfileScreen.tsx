@@ -148,7 +148,7 @@ export function ProfileScreen({ navigation }: Props) {
         </View>
 
         <View style={styles.section}>
-          <PrimaryButton label="Sign out" variant="outline" onPress={() => void signOut()} />
+          <PrimaryButton label="Settings" variant="outline" onPress={() => navigation.navigate('Settings')} />
         </View>
       </ScrollView>
     </SafeAreaView>
