@@ -98,7 +98,13 @@ export function RootNavigator() {
               title: 'Post a job',
               presentation: 'modal',
               headerRight: () => (
-                <Pressable onPress={() => navigation.goBack()} hitSlop={spacing.sm}>
+                // Right padding keeps the label clear of the screen edge; on web the
+                // header gives headerRight no inset of its own.
+                <Pressable
+                  onPress={() => navigation.goBack()}
+                  hitSlop={spacing.sm}
+                  style={{ paddingHorizontal: spacing.sm }}
+                >
                   <Text style={[type.bodyStrong, { color: colors.inkSoft }]}>Cancel</Text>
                 </Pressable>
               ),
