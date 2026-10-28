@@ -9,7 +9,9 @@
     "splash": {
       "backgroundColor": "#F1ECE0"
     },
-    "assetBundlePatterns": ["**/*"],
+    "assetBundlePatterns": [
+      "**/*"
+    ],
     "ios": {
       "bundleIdentifier": "com.halpal.app",
       "buildNumber": "1"
@@ -20,6 +22,10 @@
       "adaptiveIcon": {
         "backgroundColor": "#F1ECE0"
       }
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset"
+    ]
   }
 }
