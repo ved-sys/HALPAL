@@ -169,7 +169,8 @@ const styles = StyleSheet.create({
     backgroundColor: colors.surfaceRaised,
     borderRadius: radius.md,
     padding: spacing.lg,
-    marginHorizontal: spacing.lg,
+    // The applications section already pads the list; a second horizontal
+    // margin made these cards narrower than everything else on the screen.
     marginVertical: spacing.sm,
     borderWidth: 1,
     borderColor: colors.border,

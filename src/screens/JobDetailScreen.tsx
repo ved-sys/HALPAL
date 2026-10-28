@@ -339,7 +339,7 @@ export function JobDetailScreen({ route, navigation }: Props) {
 
         {job.status === 'confirmed_completed' && revieweeId && (
           <View style={styles.section}>
-            <Text style={[type.h2, { color: colors.ink }]}>Leave a review</Text>
+            <Text style={[type.h2, { color: colors.ink }]}>{myReview ? 'Your review' : 'Leave a review'}</Text>
             {myReview ? (
               <View style={styles.reviewCard}>
                 <Text style={[type.display, { color: colors.primary }]}>

@@ -114,7 +114,9 @@ export function RatingLine({ rating, count }: { rating: number; count: number })
   return (
     <View style={styles.ratingRow}>
       <Text style={[type.smallStrong, { color: colors.primaryDark }]}>★ {rating.toFixed(1)}</Text>
-      <Text style={[type.small, { color: colors.inkFaint }]}>· {count} jobs done</Text>
+      <Text style={[type.small, { color: colors.inkFaint }]}>
+        · {count} {count === 1 ? 'job' : 'jobs'} done
+      </Text>
     </View>
   );
 }
