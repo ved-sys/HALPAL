@@ -6,6 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
+    "backgroundColor": "#FCF2E5",
     "ios": {
       "bundleIdentifier": "com.halpal.app",
       "buildNumber": "1"
@@ -20,7 +21,13 @@
     "plugins": [
       "expo-font",
       "expo-asset",
-      "expo-status-bar"
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FCF2E5"
+        }
+      ]
     ]
   }
 }
