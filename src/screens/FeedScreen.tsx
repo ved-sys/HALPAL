@@ -59,6 +59,7 @@ export function FeedScreen({ navigation }: Props) {
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
+        style={styles.chipScroll}
         contentContainerStyle={styles.chipRow}
       >
         {(['All', ...allCategories] as const).map((category) => {
@@ -109,7 +110,10 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     ...shadow.card,
   },
-  chipRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm },
+  // Without flexGrow: 0, react-native-web 0.21 lets a horizontal ScrollView
+  // grow to fill the column, and the chips stretch to its full height.
+  chipScroll: { flexGrow: 0 },
+  chipRow: { paddingHorizontal: spacing.lg, gap: spacing.sm, paddingBottom: spacing.sm, alignItems: 'flex-start' },
   chip: {
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm,

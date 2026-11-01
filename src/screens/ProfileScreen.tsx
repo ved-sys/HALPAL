@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useCallback, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors, radius, shadow, spacing, type } from '@/theme/tokens';
@@ -7,7 +7,7 @@ import { ErrorNote, PrimaryButton, RatingLine } from '@/components/atoms';
 import { useAppMode } from '@/state/AppMode';
 import { useAuth } from '@/state/AuthContext';
 import { useStore } from '@/state/store';
-import { CompositeScreenProps } from '@react-navigation/native';
+import { CompositeScreenProps, useFocusEffect } from '@react-navigation/native';
 import { BottomTabScreenProps } from '@react-navigation/bottom-tabs';
 import { NativeStackScreenProps } from '@react-navigation/native-stack';
 import { RootStackParamList } from '@/navigation/RootNavigator';
@@ -20,7 +20,16 @@ type Props = CompositeScreenProps<
 
 export function ProfileScreen({ navigation }: Props) {
   const { mode, setMode } = useAppMode();
-  const { profile, profileError, verifyCurrentWorker, myOfferings } = useStore();
+  const { profile, profileError, verifyCurrentWorker, myOfferings, refreshProfile } = useStore();
+
+  // Rating and jobs-done change through other people's actions (a customer
+  // confirming a job, a review landing), so the row loaded at sign-in goes
+  // stale. Re-read it whenever this tab comes into view.
+  useFocusEffect(
+    useCallback(() => {
+      void refreshProfile();
+    }, [refreshProfile])
+  );
   const { signOut } = useAuth();
   const [verifying, setVerifying] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);

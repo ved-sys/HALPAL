@@ -6,10 +6,7 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "light",
-    "splash": {
-      "backgroundColor": "#F1ECE0"
-    },
-    "assetBundlePatterns": ["**/*"],
+    "backgroundColor": "#FCF2E5",
     "ios": {
       "bundleIdentifier": "com.halpal.app",
       "buildNumber": "1"
@@ -20,6 +17,17 @@
       "adaptiveIcon": {
         "backgroundColor": "#F1ECE0"
       }
-    }
+    },
+    "plugins": [
+      "expo-font",
+      "expo-asset",
+      "expo-status-bar",
+      [
+        "expo-splash-screen",
+        {
+          "backgroundColor": "#FCF2E5"
+        }
+      ]
+    ]
   }
 }
